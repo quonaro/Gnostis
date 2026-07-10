@@ -35,7 +35,7 @@ func TestSearchCodebase_EmptyQuery(t *testing.T) {
 	if res == nil || !res.IsError {
 		t.Fatalf("expected error result, got %+v", res)
 	}
-	assertTextContains(t, res, "query is required")
+	assertTextEquals(t, res, "query is required")
 }
 
 func TestSearchCodebase_Results(t *testing.T) {
@@ -171,7 +171,7 @@ func TestListProjects(t *testing.T) {
 	}
 }
 
-func assertTextContains(t *testing.T, res *mcp.CallToolResult, want string) {
+func assertTextEquals(t *testing.T, res *mcp.CallToolResult, want string) {
 	t.Helper()
 	got := extractText(t, res)
 	if got != want {

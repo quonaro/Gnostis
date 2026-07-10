@@ -38,7 +38,7 @@ Read a specific file or a range of lines.
 - `start_line` (int, optional)
 - `end_line` (int, optional)
 
-**Returns:** file content fragment with metadata.
+**Returns:** file content fragment.
 
 ## `list_projects`
 
@@ -46,7 +46,7 @@ List all indexed projects.
 
 **Parameters:** none.
 
-**Returns:** array of `{name, path, status, chunks}`.
+**Returns:** array of `{name, path}`.
 
 ## Planned tools
 
