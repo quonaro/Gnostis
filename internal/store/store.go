@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	chromem "github.com/philippgille/chromem-go"
@@ -12,10 +15,13 @@ import (
 )
 
 const collectionName = "code_chunks"
+const hashFileName = "file_hashes.json"
 
-// Store persists chunks in chromem-go.
+// Store persists chunks in chromem-go and tracks file hashes for incremental indexing.
 type Store struct {
-	col *chromem.Collection
+	col      *chromem.Collection
+	hashFile string
+	hashes   map[string]string
 }
 
 // New opens or creates a persistent chromem-go database.
@@ -35,7 +41,16 @@ func New(ctx context.Context, dataDir string) (*Store, error) {
 		return nil, fmt.Errorf("create collection: %w", err)
 	}
 
-	return &Store{col: col}, nil
+	s := &Store{
+		col:      col,
+		hashFile: filepath.Join(dataDir, hashFileName),
+		hashes:   make(map[string]string),
+	}
+	if err := s.loadHashes(); err != nil {
+		return nil, fmt.Errorf("load file hashes: %w", err)
+	}
+
+	return s, nil
 }
 
 // AddChunks stores chunks with their precomputed embeddings.
@@ -56,10 +71,16 @@ func (s *Store) AddChunks(ctx context.Context, chunks []chunker.Chunk, embedding
 		ids[i] = ch.ID
 		contents[i] = ch.Content
 		metadatas[i] = chunkMetadata(ch)
+		if ch.FileHash != "" {
+			s.hashes[ch.Path] = ch.FileHash
+		}
 	}
 
 	if err := s.col.Add(ctx, ids, embeddings, metadatas, contents); err != nil {
 		return fmt.Errorf("add chunks: %w", err)
+	}
+	if err := s.saveHashes(); err != nil {
+		return fmt.Errorf("save file hashes: %w", err)
 	}
 	slog.DebugContext(ctx, "added chunks", "count", len(chunks), "total", s.col.Count())
 
@@ -70,6 +91,10 @@ func (s *Store) AddChunks(ctx context.Context, chunks []chunker.Chunk, embedding
 func (s *Store) DeleteByPath(ctx context.Context, path string) error {
 	if err := s.col.Delete(ctx, map[string]string{"path": path}, nil); err != nil {
 		return fmt.Errorf("delete path %s: %w", path, err)
+	}
+	delete(s.hashes, path)
+	if err := s.saveHashes(); err != nil {
+		return fmt.Errorf("save file hashes: %w", err)
 	}
 	return nil
 }
@@ -101,10 +126,41 @@ func chunkMetadata(ch chunker.Chunk) map[string]string {
 	return map[string]string{
 		"project_id": ch.ProjectID,
 		"path":       ch.Path,
+		"file_hash":  ch.FileHash,
 		"language":   ch.Language,
 		"symbol":     ch.Symbol,
 		"signature":  ch.Signature,
 		"start_line": strconv.Itoa(ch.StartLine),
 		"end_line":   strconv.Itoa(ch.EndLine),
 	}
+}
+
+// GetFileHash returns the stored hash for a file path.
+func (s *Store) GetFileHash(_ context.Context, path string) (string, error) {
+	return s.hashes[path], nil
+}
+
+func (s *Store) loadHashes() error {
+	data, err := os.ReadFile(s.hashFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read hash file: %w", err)
+	}
+	if err := json.Unmarshal(data, &s.hashes); err != nil {
+		return fmt.Errorf("parse hash file: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) saveHashes() error {
+	data, err := json.Marshal(s.hashes)
+	if err != nil {
+		return fmt.Errorf("marshal hashes: %w", err)
+	}
+	if err := os.WriteFile(s.hashFile, data, 0o600); err != nil {
+		return fmt.Errorf("write hash file: %w", err)
+	}
+	return nil
 }

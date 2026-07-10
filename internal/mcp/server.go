@@ -20,6 +20,7 @@ type Searcher interface {
 // Server wraps the mcp-go server and exposes Gnostis tools.
 type Server struct {
 	server   *mcpServer.MCPServer
+	sse      *mcpServer.SSEServer
 	name     string
 	version  string
 	engine   Searcher
@@ -53,6 +54,24 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("serve stdio: %w", err)
 	}
 	return nil
+}
+
+// StartSSE runs the MCP server over HTTP/SSE on the given address.
+func (s *Server) StartSSE(ctx context.Context, addr string) error {
+	slog.InfoContext(ctx, "starting mcp sse server", "name", s.name, "version", s.version, "address", addr)
+	s.sse = mcpServer.NewSSEServer(s.server)
+	if err := s.sse.Start(addr); err != nil {
+		return fmt.Errorf("serve sse: %w", err)
+	}
+	return nil
+}
+
+// StopSSE gracefully shuts down the SSE server.
+func (s *Server) StopSSE(ctx context.Context) error {
+	if s.sse == nil {
+		return nil
+	}
+	return s.sse.Shutdown(ctx)
 }
 
 func (s *Server) registerTools() {

@@ -4,6 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/quonaro/gnostis/internal/chunker"
 	"github.com/quonaro/gnostis/internal/config"
@@ -91,8 +95,43 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	defer func() { _ = a.watcher.Stop() }()
 
-	slog.InfoContext(ctx, "serving mcp", "name", a.cfg.MCP.Name, "version", a.cfg.MCP.Version)
-	return a.mcp.Start(ctx)
+	slog.InfoContext(ctx, "serving mcp", "name", a.cfg.MCP.Name, "version", a.cfg.MCP.Version, "transport", a.cfg.MCP.Transport)
+
+	switch a.cfg.MCP.Transport {
+	case "sse":
+		return a.runSSE(ctx)
+	default:
+		return a.mcp.Start(ctx)
+	}
+}
+
+func (a *App) runSSE(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigChan)
+
+	go func() {
+		if err := a.mcp.StartSSE(ctx, a.cfg.MCP.Address); err != nil {
+			slog.ErrorContext(ctx, "mcp sse server stopped", "error", err)
+			cancel()
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+	case <-sigChan:
+		slog.InfoContext(ctx, "shutting down")
+	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if err := a.mcp.StopSSE(shutdownCtx); err != nil {
+		slog.ErrorContext(ctx, "stop mcp sse server", "error", err)
+	}
+	return nil
 }
 
 func (a *App) initialIndex(ctx context.Context) error {

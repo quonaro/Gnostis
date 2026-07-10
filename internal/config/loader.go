@@ -56,6 +56,14 @@ func resolveDefaultConfigPath() (string, error) {
 		}
 	}
 
+	cwd, err := os.Getwd()
+	if err == nil {
+		cwdConfig := filepath.Join(cwd, "config.yaml")
+		if _, err := os.Stat(cwdConfig); err == nil {
+			return cwdConfig, nil
+		}
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve home dir: %w", err)
@@ -127,6 +135,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.MCP.Transport == "" {
 		cfg.MCP.Transport = defaultTransport
+	}
+	if cfg.MCP.Address == "" {
+		cfg.MCP.Address = defaultAddress
 	}
 
 	for i := range cfg.Directories {

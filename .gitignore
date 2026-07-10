@@ -24,6 +24,9 @@ vendor/
 config.yaml
 .env
 
+# Data
+data
+
 # OS
 .DS_Store
 Thumbs.db

@@ -69,3 +69,27 @@ func TestLoadValidation(t *testing.T) {
 		t.Fatal("expected error for empty directories")
 	}
 }
+
+func TestLoadFromCwd(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	data := `
+log_level: debug
+directories:
+  - path: ` + dir + `
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("load from cwd: %v", err)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Errorf("log_level = %q, want debug", cfg.LogLevel)
+	}
+}

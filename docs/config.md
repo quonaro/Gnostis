@@ -2,9 +2,11 @@
 
 Gnostis reads its configuration on startup in this order:
 
-1. A path explicitly set via the `GNOSTIS_CONFIG` environment variable.
-2. `config.yaml` located in the same directory as the running binary.
-3. `~/.gnostis/config.yaml` as a fallback.
+1. A path explicitly set via the `-config` command-line flag.
+2. A path explicitly set via the `GNOSTIS_CONFIG` environment variable.
+3. `config.yaml` located in the same directory as the running binary.
+4. `config.yaml` in the current working directory.
+5. `~/.gnostis/config.yaml` as a fallback.
 
 Environment variables inside the file can be interpolated with `${VAR}` or `${VAR:-default}`.
 
@@ -56,7 +58,8 @@ directories:
 mcp:
   name: gnostis
   version: "0.1.0"
-  transport: stdio
+  transport: sse
+  address: "127.0.0.1:8080"
 ```
 
 ## Fields
@@ -98,7 +101,8 @@ List of indexing roots. Each entry supports:
 
 - `name`: server name.
 - `version`: server version.
-- `transport`: `stdio` or `sse`; `stdio` is recommended for editors.
+- `transport`: `stdio` or `sse`; `stdio` is recommended for editors, `sse` runs a background HTTP server.
+- `address`: listen address for `sse` transport. Default: `:8080`.
 
 ## Filter precedence
 

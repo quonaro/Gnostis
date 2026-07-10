@@ -40,6 +40,7 @@ type MCP struct {
 	Name      string `yaml:"name"`
 	Version   string `yaml:"version"`
 	Transport string `yaml:"transport"`
+	Address   string `yaml:"address"`
 }
 
 const (
@@ -52,4 +53,5 @@ const (
 	defaultServerName = "gnostis"
 	defaultVersion    = "0.1.0"
 	defaultTransport  = "stdio"
+	defaultAddress    = ":8080"
 )

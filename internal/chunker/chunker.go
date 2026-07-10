@@ -18,6 +18,7 @@ type Chunk struct {
 	ID        string
 	ProjectID string
 	Path      string
+	FileHash  string
 	Language  string
 	Symbol    string
 	Signature string
@@ -107,6 +108,7 @@ func (c *Chunker) buildChunk(file indexer.FileInfo, lang string, node *sitter.No
 		ID:        hashChunk(file.Path, text),
 		ProjectID: file.ProjectID,
 		Path:      file.Path,
+		FileHash:  file.Hash,
 		Language:  lang,
 		Symbol:    symbol,
 		Signature: firstLine,
@@ -137,6 +139,7 @@ func (c *Chunker) chunkMarkdown(file indexer.FileInfo) []Chunk {
 			ID:        hashChunk(file.Path, section),
 			ProjectID: file.ProjectID,
 			Path:      file.Path,
+			FileHash:  file.Hash,
 			Language:  "markdown",
 			Symbol:    header,
 			Signature: header,
@@ -159,6 +162,7 @@ func (c *Chunker) wholeFileChunk(file indexer.FileInfo, lang string) Chunk {
 		ID:        hashChunk(file.Path, file.Content),
 		ProjectID: file.ProjectID,
 		Path:      file.Path,
+		FileHash:  file.Hash,
 		Language:  lang,
 		Symbol:    filepath.Base(file.Path),
 		Signature: filepath.Base(file.Path),

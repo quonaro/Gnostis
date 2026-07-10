@@ -25,10 +25,25 @@ func indexDirectory(ctx context.Context, dir directory.Directory, proj project.P
 
 	var allChunks []chunker.Chunk
 	for _, f := range files {
+		storedHash, err := st.GetFileHash(ctx, f.Path)
+		if err != nil {
+			slog.WarnContext(ctx, "lookup stored hash", "path", f.Path, "error", err)
+			continue
+		}
+		if storedHash == f.Hash {
+			slog.DebugContext(ctx, "skipping unchanged file", "path", f.Path)
+			continue
+		}
+
 		chunks, err := ch.ChunkFile(ctx, f)
 		if err != nil {
 			slog.WarnContext(ctx, "chunk file", "path", f.Path, "error", err)
 			continue
+		}
+		if len(chunks) > 0 {
+			if err := st.DeleteByPath(ctx, f.Path); err != nil {
+				slog.WarnContext(ctx, "delete stale chunks", "path", f.Path, "error", err)
+			}
 		}
 		allChunks = append(allChunks, chunks...)
 	}
