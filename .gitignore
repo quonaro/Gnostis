@@ -1,5 +1,5 @@
 # Binaries
-gnostis
+/gnostis
 *.exe
 *.dll
 *.so
