@@ -20,6 +20,9 @@ vendor/
 # AI
 .devin
 
+# Configuration
+config.yaml
+
 # OS
 .DS_Store
 Thumbs.db

@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
+	"log/slog"
 
 	"github.com/quonaro/gnostis/internal/chunker"
 	"github.com/quonaro/gnostis/internal/config"
@@ -33,6 +33,8 @@ type App struct {
 
 // New builds the application from configuration.
 func New(cfg config.Config) (*App, error) {
+	slog.Info("initializing app", "data_dir", cfg.DataDir, "provider", cfg.Embeddings.Provider, "model", cfg.Embeddings.Model)
+
 	dirs := make([]directory.Directory, len(cfg.Directories))
 	projects := make([]project.Project, len(cfg.Directories))
 
@@ -58,7 +60,7 @@ func New(cfg config.Config) (*App, error) {
 
 	w := watcher.New(dirs, func(path string) {
 		if err := reindexFile(context.Background(), path, dirs, projects, st, provider); err != nil {
-			fmt.Fprintf(os.Stderr, "reindex %s: %v\n", path, err)
+			slog.Error("reindex file", "path", path, "error", err)
 		}
 	})
 
@@ -78,6 +80,8 @@ func New(cfg config.Config) (*App, error) {
 
 // Run performs initial indexing, starts the watcher, and serves MCP.
 func (a *App) Run(ctx context.Context) error {
+	slog.InfoContext(ctx, "starting app")
+
 	if err := a.initialIndex(ctx); err != nil {
 		return fmt.Errorf("initial index: %w", err)
 	}
@@ -87,16 +91,17 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	defer func() { _ = a.watcher.Stop() }()
 
+	slog.InfoContext(ctx, "serving mcp", "name", a.cfg.MCP.Name, "version", a.cfg.MCP.Version)
 	return a.mcp.Start(ctx)
 }
 
 func (a *App) initialIndex(ctx context.Context) error {
 	for i, dir := range a.dirs {
-		fmt.Fprintf(os.Stderr, "indexing %s...\n", dir.Path)
+		slog.InfoContext(ctx, "indexing directory", "path", dir.Path, "project", a.projects[i].Name)
 		if err := indexDirectory(ctx, dir, a.projects[i], a.indexer, a.chunker, a.provider, a.store); err != nil {
 			return fmt.Errorf("index %s: %w", dir.Path, err)
 		}
 	}
-	fmt.Fprintf(os.Stderr, "index complete: %d chunks\n", a.store.Count())
+	slog.InfoContext(ctx, "initial index complete", "chunks", a.store.Count())
 	return nil
 }

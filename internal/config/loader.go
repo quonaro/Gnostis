@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,6 +22,7 @@ func Load(path string) (Config, error) {
 		}
 		path = filepath.Join(home, ".gnostis", "config.yaml")
 	}
+	slog.Info("loading config", "path", path)
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -35,7 +37,9 @@ func Load(path string) (Config, error) {
 	}
 
 	applyDefaults(&cfg)
+	slog.Debug("applied config defaults", "data_dir", cfg.DataDir, "provider", cfg.Embeddings.Provider, "model", cfg.Embeddings.Model)
 	if err := validate(&cfg); err != nil {
+		slog.Error("config validation failed", "error", err)
 		return Config{}, fmt.Errorf("validate config: %w", err)
 	}
 

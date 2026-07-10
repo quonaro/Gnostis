@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -37,6 +38,7 @@ func (p *openAICompatible) ModelName() string {
 }
 
 func (p *openAICompatible) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	slog.DebugContext(ctx, "embedding texts", "count", len(texts), "batch_size", p.batchSize, "model", p.model)
 	var all [][]float32
 
 	for i := 0; i < len(texts); i += p.batchSize {
@@ -88,6 +90,7 @@ func (p *openAICompatible) embedBatch(ctx context.Context, texts []string) ([][]
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		slog.ErrorContext(ctx, "embeddings request failed", "status", resp.StatusCode, "body", string(respBody))
 		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
 	}
 
@@ -108,6 +111,7 @@ func (p *openAICompatible) embedBatch(ctx context.Context, texts []string) ([][]
 	if len(out) != len(texts) {
 		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(out))
 	}
+	slog.DebugContext(ctx, "embeddings received", "count", len(out))
 
 	return out, nil
 }

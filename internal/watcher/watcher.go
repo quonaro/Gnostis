@@ -3,6 +3,7 @@ package watcher
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -51,6 +52,7 @@ func (w *Watcher) Start() error {
 	w.watcher = fw
 
 	for _, dir := range w.dirs {
+		slog.Info("watching directory", "path", dir.Path)
 		if err := w.addRecursive(dir.Path); err != nil {
 			return fmt.Errorf("watch %s: %w", dir.Path, err)
 		}
@@ -62,6 +64,7 @@ func (w *Watcher) Start() error {
 
 // Stop shuts down the watcher.
 func (w *Watcher) Stop() error {
+	slog.Info("stopping watcher")
 	w.cancel()
 	if w.watcher != nil {
 		return w.watcher.Close()
@@ -97,12 +100,13 @@ func (w *Watcher) run() {
 			if !ok {
 				return
 			}
-			fmt.Fprintf(os.Stderr, "watcher error: %v\n", err)
+			slog.Error("watcher error", "error", err)
 		}
 	}
 }
 
 func (w *Watcher) handleEvent(event fsnotify.Event) {
+	slog.Debug("filesystem event", "path", event.Name, "op", event.Op.String())
 	if event.Op == fsnotify.Create {
 		info, err := os.Stat(event.Name)
 		if err == nil && info.IsDir() {
@@ -133,6 +137,7 @@ func (w *Watcher) flush() {
 	w.timer = nil
 	w.mu.Unlock()
 
+	slog.Debug("flushing filesystem changes", "count", len(paths))
 	for _, p := range paths {
 		w.onChange(p)
 	}

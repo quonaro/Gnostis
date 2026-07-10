@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 
 	"github.com/quonaro/gnostis/internal/embeddings"
@@ -39,6 +40,7 @@ func (e *Engine) Search(ctx context.Context, query string, filters map[string]st
 	if topK <= 0 {
 		topK = 10
 	}
+	slog.DebugContext(ctx, "search", "query", query, "filters", filters, "top_k", topK)
 
 	vectors, err := e.provider.Embed(ctx, []string{query})
 	if err != nil {
@@ -68,5 +70,6 @@ func (e *Engine) Search(ctx context.Context, query string, filters map[string]st
 		results = results[:topK]
 	}
 
+	slog.DebugContext(ctx, "search results", "count", len(results))
 	return results, nil
 }

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpServer "github.com/mark3labs/mcp-go/server"
@@ -14,13 +15,18 @@ import (
 // Server wraps the mcp-go server and exposes Gnostis tools.
 type Server struct {
 	server   *mcpServer.MCPServer
+	name     string
+	version  string
 	engine   *search.Engine
 	projects []project.Project
 }
 
 // New creates and configures the MCP server.
 func New(name, version string, engine *search.Engine, projects []project.Project) *Server {
+	slog.Info("creating mcp server", "name", name, "version", version)
 	s := &Server{
+		name:     name,
+		version:  version,
 		engine:   engine,
 		projects: projects,
 	}
@@ -37,6 +43,7 @@ func New(name, version string, engine *search.Engine, projects []project.Project
 
 // Start runs the stdio MCP server until the process exits.
 func (s *Server) Start(ctx context.Context) error {
+	slog.InfoContext(ctx, "starting mcp server", "name", s.name, "version", s.version)
 	if err := mcpServer.ServeStdio(s.server); err != nil {
 		return fmt.Errorf("serve stdio: %w", err)
 	}
@@ -44,6 +51,7 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 func (s *Server) registerTools() {
+	slog.Info("registering mcp tools")
 	s.server.AddTool(searchCodebaseTool(), mcp.NewTypedToolHandler(s.searchCodebase))
 	s.server.AddTool(findSymbolTool(), mcp.NewTypedToolHandler(s.findSymbol))
 	s.server.AddTool(getFileContextTool(), mcp.NewTypedToolHandler(s.getFileContext))

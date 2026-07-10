@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -48,6 +49,7 @@ type searchResultItem struct {
 }
 
 func (s *Server) searchCodebase(ctx context.Context, request mcp.CallToolRequest, args searchCodebaseArgs) (*mcp.CallToolResult, error) {
+	slog.InfoContext(ctx, "mcp tool call", "tool", "search_codebase", "query", args.Query, "project", args.Project, "language", args.Language)
 	if args.Query == "" {
 		return mcp.NewToolResultError("query is required"), nil
 	}
@@ -67,8 +69,10 @@ func (s *Server) searchCodebase(ctx context.Context, request mcp.CallToolRequest
 
 	results, err := s.engine.Search(ctx, args.Query, filters, topK)
 	if err != nil {
+		slog.ErrorContext(ctx, "search_codebase failed", "query", args.Query, "error", err)
 		return nil, fmt.Errorf("search: %w", err)
 	}
+	slog.DebugContext(ctx, "search_codebase results", "count", len(results))
 
 	items := make([]searchResultItem, len(results))
 	for i, r := range results {
@@ -97,6 +101,7 @@ func (s *Server) searchCodebase(ctx context.Context, request mcp.CallToolRequest
 }
 
 func (s *Server) findSymbol(ctx context.Context, request mcp.CallToolRequest, args findSymbolArgs) (*mcp.CallToolResult, error) {
+	slog.InfoContext(ctx, "mcp tool call", "tool", "find_symbol", "name", args.Name, "project", args.Project, "language", args.Language)
 	if args.Name == "" {
 		return mcp.NewToolResultError("name is required"), nil
 	}
@@ -112,8 +117,10 @@ func (s *Server) findSymbol(ctx context.Context, request mcp.CallToolRequest, ar
 	query := fmt.Sprintf("function or type named %s", args.Name)
 	results, err := s.engine.Search(ctx, query, filters, 10)
 	if err != nil {
+		slog.ErrorContext(ctx, "find_symbol failed", "name", args.Name, "error", err)
 		return nil, fmt.Errorf("search symbol: %w", err)
 	}
+	slog.DebugContext(ctx, "find_symbol results", "count", len(results))
 
 	var matched []search.Result
 	nameLower := strings.ToLower(args.Name)
@@ -148,12 +155,14 @@ func (s *Server) findSymbol(ctx context.Context, request mcp.CallToolRequest, ar
 }
 
 func (s *Server) getFileContext(ctx context.Context, request mcp.CallToolRequest, args getFileContextArgs) (*mcp.CallToolResult, error) {
+	slog.InfoContext(ctx, "mcp tool call", "tool", "get_file_context", "path", args.Path, "start_line", args.StartLine, "end_line", args.EndLine)
 	if args.Path == "" {
 		return mcp.NewToolResultError("path is required"), nil
 	}
 
 	content, err := os.ReadFile(args.Path)
 	if err != nil {
+		slog.ErrorContext(ctx, "get_file_context failed", "path", args.Path, "error", err)
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
@@ -177,6 +186,7 @@ func (s *Server) getFileContext(ctx context.Context, request mcp.CallToolRequest
 }
 
 func (s *Server) listProjects(ctx context.Context, request mcp.CallToolRequest, args listProjectsArgs) (*mcp.CallToolResult, error) {
+	slog.InfoContext(ctx, "mcp tool call", "tool", "list_projects")
 	type projectItem struct {
 		Name string `json:"name"`
 		Path string `json:"path"`

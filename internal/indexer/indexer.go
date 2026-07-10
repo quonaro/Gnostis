@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -40,6 +41,7 @@ func (idx *Indexer) Index(ctx context.Context, dir directory.Directory, proj pro
 
 	err := filepath.WalkDir(dir.Path, func(absPath string, d os.DirEntry, err error) error {
 		if err != nil {
+			slog.Warn("walk directory entry", "path", absPath, "error", err)
 			return err
 		}
 
@@ -71,6 +73,7 @@ func (idx *Indexer) Index(ctx context.Context, dir directory.Directory, proj pro
 
 		content, err := os.ReadFile(absPath)
 		if err != nil {
+			slog.Warn("read file", "path", absPath, "error", err)
 			return fmt.Errorf("read %s: %w", absPath, err)
 		}
 
@@ -89,6 +92,7 @@ func (idx *Indexer) Index(ctx context.Context, dir directory.Directory, proj pro
 		return nil, fmt.Errorf("walk %s: %w", dir.Path, err)
 	}
 
+	slog.InfoContext(ctx, "indexed directory", "path", dir.Path, "files", len(files))
 	return files, nil
 }
 

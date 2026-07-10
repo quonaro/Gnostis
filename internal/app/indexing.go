@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,20 +21,23 @@ func indexDirectory(ctx context.Context, dir directory.Directory, proj project.P
 	if err != nil {
 		return fmt.Errorf("walk directory: %w", err)
 	}
+	slog.InfoContext(ctx, "indexed files", "project", proj.Name, "count", len(files))
 
 	var allChunks []chunker.Chunk
 	for _, f := range files {
 		chunks, err := ch.ChunkFile(ctx, f)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "chunk %s: %v\n", f.Path, err)
+			slog.WarnContext(ctx, "chunk file", "path", f.Path, "error", err)
 			continue
 		}
 		allChunks = append(allChunks, chunks...)
 	}
 
 	if len(allChunks) == 0 {
+		slog.InfoContext(ctx, "no chunks to embed", "project", proj.Name)
 		return nil
 	}
+	slog.InfoContext(ctx, "embedding chunks", "project", proj.Name, "count", len(allChunks))
 
 	vectors, err := embedChunks(ctx, provider, allChunks)
 	if err != nil {
@@ -43,6 +47,7 @@ func indexDirectory(ctx context.Context, dir directory.Directory, proj project.P
 	if err := st.AddChunks(ctx, allChunks, vectors); err != nil {
 		return fmt.Errorf("store chunks: %w", err)
 	}
+	slog.InfoContext(ctx, "stored chunks", "project", proj.Name, "count", len(allChunks))
 
 	return nil
 }
@@ -56,6 +61,7 @@ func reindexFile(ctx context.Context, absPath string, dirs []directory.Directory
 		if !strings.HasPrefix(absPath, dir.Path) {
 			continue
 		}
+		slog.InfoContext(ctx, "reindexing file", "path", absPath, "project", projects[i].Name)
 
 		rel, err := filepath.Rel(dir.Path, absPath)
 		if err != nil {
@@ -113,6 +119,7 @@ func embedChunks(ctx context.Context, provider embeddings.Provider, chunks []chu
 	for i, c := range chunks {
 		texts[i] = c.Content
 	}
+	slog.DebugContext(ctx, "embedding chunks", "count", len(chunks), "model", provider.ModelName())
 
 	vectors, err := provider.Embed(ctx, texts)
 	if err != nil {

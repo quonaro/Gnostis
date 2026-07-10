@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 
 	chromem "github.com/philippgille/chromem-go"
@@ -19,6 +20,7 @@ type Store struct {
 
 // New opens or creates a persistent chromem-go database.
 func New(ctx context.Context, dataDir string) (*Store, error) {
+	slog.InfoContext(ctx, "opening store", "data_dir", dataDir)
 	db, err := chromem.NewPersistentDB(dataDir, false)
 	if err != nil {
 		return nil, fmt.Errorf("open chromem db: %w", err)
@@ -41,6 +43,7 @@ func (s *Store) AddChunks(ctx context.Context, chunks []chunker.Chunk, embedding
 	if len(chunks) == 0 {
 		return nil
 	}
+	slog.DebugContext(ctx, "adding chunks", "count", len(chunks))
 	if len(chunks) != len(embeddings) {
 		return fmt.Errorf("chunks (%d) and embeddings (%d) length mismatch", len(chunks), len(embeddings))
 	}
@@ -58,6 +61,7 @@ func (s *Store) AddChunks(ctx context.Context, chunks []chunker.Chunk, embedding
 	if err := s.col.Add(ctx, ids, embeddings, metadatas, contents); err != nil {
 		return fmt.Errorf("add chunks: %w", err)
 	}
+	slog.DebugContext(ctx, "added chunks", "count", len(chunks), "total", s.col.Count())
 
 	return nil
 }
