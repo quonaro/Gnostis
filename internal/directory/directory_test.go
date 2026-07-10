@@ -28,6 +28,8 @@ func TestShouldIndex(t *testing.T) {
 		{"README.md", 100, false},
 		{"main_test.go", 100, false},
 		{"vendor/lib.go", 100, false},
+		{".git/FETCH_HEAD", 100, false},
+		{".git/objects/maintenance.lock", 100, false},
 		{"big.go", 2 * 1024 * 1024, false},
 		{"data/file_hashes.json", 100, false},
 		{"data/cc21aa19/2fb51258.gob", 100, false},
@@ -54,5 +56,31 @@ func TestIncludeFilter(t *testing.T) {
 	}
 	if !d.ShouldIndex("src/app.go", 100) {
 		t.Error("src/app.go should match include filter")
+	}
+}
+
+func TestDefaultExcludePatterns(t *testing.T) {
+	idx := config.Index{
+		DefaultExtensions:      []string{".go"},
+		DefaultExcludePatterns: []string{"node_modules/**", ".git/**", "vendor/**"},
+	}
+	d := FromConfig(idx, config.Directory{Path: "/tmp/proj"})
+
+	cases := []struct {
+		rel  string
+		want bool
+	}{
+		{"main.go", true},
+		{".git/FETCH_HEAD", false},
+		{".git/objects/maintenance.lock", false},
+		{"vendor/lib.go", false},
+		{"node_modules/pkg/index.js", false},
+	}
+
+	for _, tc := range cases {
+		got := d.ShouldIndex(tc.rel, 100)
+		if got != tc.want {
+			t.Errorf("ShouldIndex(%q) = %v, want %v", tc.rel, got, tc.want)
+		}
 	}
 }

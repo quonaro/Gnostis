@@ -76,7 +76,6 @@ func reindexFile(ctx context.Context, absPath string, dirs []directory.Directory
 		if !strings.HasPrefix(absPath, dir.Path) {
 			continue
 		}
-		slog.InfoContext(ctx, "reindexing file", "path", absPath, "project", projects[i].Name)
 
 		rel, err := filepath.Rel(dir.Path, absPath)
 		if err != nil {
@@ -93,6 +92,8 @@ func reindexFile(ctx context.Context, absPath string, dirs []directory.Directory
 			_ = st.DeleteByPath(ctx, absPath)
 			return nil
 		}
+
+		slog.InfoContext(ctx, "reindexing file", "path", absPath, "project", projects[i].Name)
 
 		_ = st.DeleteByPath(ctx, absPath)
 
