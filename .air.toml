@@ -12,7 +12,7 @@ exclude_file = []
 exclude_regex = ["_test.go"]
 exclude_unchanged = false
 follow_symlink = false
-full_bin = "./tmp/main -config ./config.yaml"
+full_bin = "GNOSTIS_CONFIG=./config.yaml ./tmp/main"
 include_dir = []
 include_ext = ["go", "yaml", "yml"]
 include_file = []

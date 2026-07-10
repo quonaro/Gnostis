@@ -2,11 +2,15 @@
 
 Gnostis reads its configuration on startup in this order:
 
-1. A path explicitly set via the `-config` command-line flag.
-2. A path explicitly set via the `GNOSTIS_CONFIG` environment variable.
-3. `config.yaml` located in the same directory as the running binary.
-4. `config.yaml` in the current working directory.
-5. `~/.gnostis/config.yaml` as a fallback.
+1. A path explicitly set via the `GNOSTIS_CONFIG` environment variable.
+2. `config.yaml` located in the same directory as the running binary.
+3. `config.yaml` in the current working directory.
+4. `~/.gnostis/config.yaml` as a fallback.
+
+The following environment variables control startup behavior:
+
+- `GNOSTIS_CONFIG`: path to the YAML config file.
+- `GNOSTIS_DATA_DIR`: persistent data directory for the vector store and metadata. Default: `~/.gnostis/data`.
 
 Environment variables inside the file can be interpolated with `${VAR}` or `${VAR:-default}`.
 
@@ -14,8 +18,6 @@ Environment variables inside the file can be interpolated with `${VAR}` or `${VA
 
 ```yaml
 log_level: ${GNOSTIS_LOG_LEVEL:-info}
-
-data_dir: ${HOME}/.gnostis/data
 
 embeddings:
   provider: ollama
@@ -68,10 +70,6 @@ mcp:
 
 Log level for the application. One of: `debug`, `info`, `warn`, `error`. Default: `info`.
 Set to `debug` to see detailed embedding request logs and model activity.
-
-### `data_dir`
-
-Persistent data directory for the vector store and metadata. Default: `~/.gnostis/data`.
 
 ### `embeddings`
 

@@ -32,7 +32,6 @@ func TestLoadDefaults(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 
 	data := `
-data_dir: ${HOME}/.gnostis/test
 directories:
   - path: ` + dir + `
 `
@@ -53,6 +52,29 @@ directories:
 	}
 	if cfg.Embeddings.BatchSize != 32 {
 		t.Errorf("default batch size = %d, want 32", cfg.Embeddings.BatchSize)
+	}
+}
+
+func TestLoadDataDirEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(envDataDir, dir)
+
+	path := filepath.Join(dir, "config.yaml")
+	data := `
+data_dir: /should/be/overridden
+directories:
+  - path: ` + dir + `
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.DataDir != dir {
+		t.Errorf("data_dir = %q, want %q", cfg.DataDir, dir)
 	}
 }
 

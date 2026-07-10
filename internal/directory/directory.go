@@ -88,7 +88,16 @@ func matchPattern(pattern, path string) bool {
 	if err != nil {
 		return false
 	}
-	return matched
+	if matched {
+		return true
+	}
+
+	// A plain directory/prefix pattern like "data" should also exclude
+	// everything beneath it (e.g. "data/file_hashes.json").
+	if !strings.ContainsAny(pattern, "*/?") {
+		return strings.HasPrefix(path, pattern+"/")
+	}
+	return false
 }
 
 func normalizeExtensions(exts []string) []string {

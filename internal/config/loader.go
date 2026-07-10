@@ -13,6 +13,8 @@ import (
 
 var envPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}`)
 
+const envDataDir = "GNOSTIS_DATA_DIR"
+
 // Load reads, interpolates, parses, and validates the configuration file.
 func Load(path string) (Config, error) {
 	if path == "" {
@@ -34,6 +36,10 @@ func Load(path string) (Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal([]byte(interpolated), &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
+	}
+
+	if v := os.Getenv(envDataDir); v != "" {
+		cfg.DataDir = v
 	}
 
 	applyDefaults(&cfg)

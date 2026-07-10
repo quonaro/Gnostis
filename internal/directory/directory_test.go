@@ -15,7 +15,7 @@ func TestShouldIndex(t *testing.T) {
 	d := FromConfig(idx, config.Directory{
 		Path:          "/tmp/proj",
 		Extensions:    []string{".go"},
-		Exclude:       []string{"**/*_test.go"},
+		Exclude:       []string{"**/*_test.go", "data"},
 		MaxFileSizeMB: 1,
 	})
 
@@ -29,6 +29,9 @@ func TestShouldIndex(t *testing.T) {
 		{"main_test.go", 100, false},
 		{"vendor/lib.go", 100, false},
 		{"big.go", 2 * 1024 * 1024, false},
+		{"data/file_hashes.json", 100, false},
+		{"data/cc21aa19/2fb51258.gob", 100, false},
+		{"notdata/file.go", 100, true},
 	}
 
 	for _, tc := range cases {

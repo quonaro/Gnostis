@@ -2,8 +2,8 @@ package config
 
 // Config holds the complete application configuration.
 type Config struct {
-	LogLevel    string      `yaml:"log_level"`
-	DataDir     string      `yaml:"data_dir"`
+	LogLevel    string `yaml:"log_level"`
+	DataDir     string
 	Embeddings  Embeddings  `yaml:"embeddings"`
 	Index       Index       `yaml:"index"`
 	Directories []Directory `yaml:"directories"`
