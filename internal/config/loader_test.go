@@ -115,3 +115,19 @@ directories:
 		t.Errorf("log_level = %q, want debug", cfg.LogLevel)
 	}
 }
+
+func TestResolvePath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("directories:\n  - path: "+dir+"\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	resolved, err := ResolvePath(path)
+	if err != nil {
+		t.Fatalf("ResolvePath: %v", err)
+	}
+	if resolved != path {
+		t.Errorf("ResolvePath = %q, want %q", resolved, path)
+	}
+}

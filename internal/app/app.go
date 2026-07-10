@@ -144,3 +144,17 @@ func (a *App) initialIndex(ctx context.Context) error {
 	slog.InfoContext(ctx, "initial index complete", "chunks", a.store.Count())
 	return nil
 }
+
+// Status returns the configured project names and current chunk count.
+func (a *App) Status() ([]string, int) {
+	names := make([]string, len(a.projects))
+	for i, p := range a.projects {
+		names[i] = p.Name
+	}
+	return names, a.store.Count()
+}
+
+// InitialIndex performs the first-time indexing of all configured directories.
+func (a *App) InitialIndex(ctx context.Context) error {
+	return a.initialIndex(ctx)
+}

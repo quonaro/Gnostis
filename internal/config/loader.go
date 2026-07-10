@@ -15,14 +15,28 @@ var envPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\
 
 const envDataDir = "GNOSTIS_DATA_DIR"
 
-// Load reads, interpolates, parses, and validates the configuration file.
-func Load(path string) (Config, error) {
+// ResolvePath returns the absolute config path that Load would use.
+func ResolvePath(path string) (string, error) {
 	if path == "" {
 		var err error
 		path, err = resolveDefaultConfigPath()
 		if err != nil {
-			return Config{}, fmt.Errorf("resolve default config path: %w", err)
+			return "", fmt.Errorf("resolve default config path: %w", err)
 		}
+	}
+
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve absolute config path: %w", err)
+	}
+	return abs, nil
+}
+
+// Load reads, interpolates, parses, and validates the configuration file.
+func Load(path string) (Config, error) {
+	path, err := ResolvePath(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("resolve config path: %w", err)
 	}
 	slog.Info("loading config", "path", path)
 

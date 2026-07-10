@@ -109,3 +109,22 @@ List of indexing roots. Each entry supports:
 3. `exclude`
 4. `extensions`
 5. `max_file_size_mb`
+
+## Discovering projects
+
+The `gnostis config discover <path>` command scans `<path>` and proposes adding every first-level subdirectory as a project.
+
+```bash
+gnostis config discover /home/user/CascadeProjects/my
+gnostis config discover /home/user/CascadeProjects/my --git --backup
+```
+
+Flags:
+
+- `--git` — only include directories that contain `.git`.
+- `--go` — only include directories that contain `go.mod`.
+- `--nm` — only include directories that contain `node_modules`.
+- `--venv` — only include directories that contain `.venv`.
+- `--backup` — create a numbered backup of `config.yaml` before writing.
+
+When multiple flags are provided, a directory matching any of them is included. The command shows a preview and asks for `[Y/n]` confirmation before modifying the config. Already configured directories are shown as `already configured` and skipped.
