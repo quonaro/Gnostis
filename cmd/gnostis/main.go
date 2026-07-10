@@ -9,6 +9,8 @@ import (
 	"os"
 
 	"github.com/quonaro/lota/engine"
+
+	"github.com/quonaro/gnostis/internal/log"
 )
 
 // version is injected at build time via -ldflags "-X main.version=<hash>".
@@ -33,7 +35,7 @@ func parseLogLevel(level string) (slog.Level, error) {
 }
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	logger := slog.New(log.NewHandler(os.Stderr, slog.LevelInfo))
 	slog.SetDefault(logger)
 
 	builder := engine.NewBuilder("gnostis", cliYAML)

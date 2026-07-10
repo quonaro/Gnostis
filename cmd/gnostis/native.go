@@ -13,6 +13,7 @@ import (
 
 	"github.com/quonaro/gnostis/internal/app"
 	"github.com/quonaro/gnostis/internal/config"
+	"github.com/quonaro/gnostis/internal/log"
 )
 
 func runHandler(_ context.Context, nctx engine.NativeContext) error {
@@ -41,7 +42,7 @@ func loadConfig() (config.Config, error) {
 		if err != nil {
 			return config.Config{}, fmt.Errorf("parse log level: %w", err)
 		}
-		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+		slog.SetDefault(slog.New(log.NewHandler(os.Stderr, level)))
 	}
 
 	return cfg, nil
