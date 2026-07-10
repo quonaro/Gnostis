@@ -2,6 +2,7 @@ package config
 
 // Config holds the complete application configuration.
 type Config struct {
+	LogLevel    string      `yaml:"log_level"`
 	DataDir     string      `yaml:"data_dir"`
 	Embeddings  Embeddings  `yaml:"embeddings"`
 	Index       Index       `yaml:"index"`
@@ -42,6 +43,7 @@ type MCP struct {
 }
 
 const (
+	defaultLogLevel   = "info"
 	defaultDataDir    = "${HOME}/.gnostis/data"
 	defaultProvider   = "ollama"
 	defaultURL        = "http://localhost:11434/v1"

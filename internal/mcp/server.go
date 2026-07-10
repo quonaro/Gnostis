@@ -12,17 +12,22 @@ import (
 	"github.com/quonaro/gnostis/internal/search"
 )
 
+// Searcher is the subset of the search engine used by MCP tools.
+type Searcher interface {
+	Search(ctx context.Context, query string, filters map[string]string, topK int) ([]search.Result, error)
+}
+
 // Server wraps the mcp-go server and exposes Gnostis tools.
 type Server struct {
 	server   *mcpServer.MCPServer
 	name     string
 	version  string
-	engine   *search.Engine
+	engine   Searcher
 	projects []project.Project
 }
 
 // New creates and configures the MCP server.
-func New(name, version string, engine *search.Engine, projects []project.Project) *Server {
+func New(name, version string, engine Searcher, projects []project.Project) *Server {
 	slog.Info("creating mcp server", "name", name, "version", version)
 	s := &Server{
 		name:     name,

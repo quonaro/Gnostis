@@ -1,10 +1,18 @@
 # Configuration
 
-Gnostis reads `~/.gnostis/config.yaml` on startup. Environment variables can be interpolated with `${VAR}` or `${VAR:-default}`.
+Gnostis reads its configuration on startup in this order:
+
+1. A path explicitly set via the `GNOSTIS_CONFIG` environment variable.
+2. `config.yaml` located in the same directory as the running binary.
+3. `~/.gnostis/config.yaml` as a fallback.
+
+Environment variables inside the file can be interpolated with `${VAR}` or `${VAR:-default}`.
 
 ## Example
 
 ```yaml
+log_level: ${GNOSTIS_LOG_LEVEL:-info}
+
 data_dir: ${HOME}/.gnostis/data
 
 embeddings:
@@ -52,6 +60,11 @@ mcp:
 ```
 
 ## Fields
+
+### `log_level`
+
+Log level for the application. One of: `debug`, `info`, `warn`, `error`. Default: `info`.
+Set to `debug` to see detailed embedding request logs and model activity.
 
 ### `data_dir`
 

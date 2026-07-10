@@ -8,8 +8,18 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
+
+const debugBodyMaxLen = 2000
+
+func truncateForDebug(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "... [truncated]"
+}
 
 // openAICompatible is an HTTP client for OpenAI-compatible /v1/embeddings endpoints.
 type openAICompatible struct {
@@ -38,7 +48,11 @@ func (p *openAICompatible) ModelName() string {
 }
 
 func (p *openAICompatible) Embed(ctx context.Context, texts []string) ([][]float32, error) {
-	slog.DebugContext(ctx, "embedding texts", "count", len(texts), "batch_size", p.batchSize, "model", p.model)
+	batches := (len(texts) + p.batchSize - 1) / p.batchSize
+	if batches < 1 {
+		batches = 1
+	}
+	slog.DebugContext(ctx, "embedding texts", "count", len(texts), "batches", batches, "batch_size", p.batchSize, "model", p.model, "url", p.url)
 	var all [][]float32
 
 	for i := 0; i < len(texts); i += p.batchSize {
@@ -46,6 +60,14 @@ func (p *openAICompatible) Embed(ctx context.Context, texts []string) ([][]float
 		if end > len(texts) {
 			end = len(texts)
 		}
+		batchNum := i/p.batchSize + 1
+
+		previews := make([]string, 0, end-i)
+		for _, text := range texts[i:end] {
+			preview := strings.ReplaceAll(text, "\n", "\\n")
+			previews = append(previews, truncateForDebug(preview, 120))
+		}
+		slog.DebugContext(ctx, "embedding batch", "batch", batchNum, "of", batches, "size", end-i, "previews", previews)
 
 		batch, err := p.embedBatch(ctx, texts[i:end])
 		if err != nil {
@@ -68,6 +90,8 @@ func (p *openAICompatible) embedBatch(ctx context.Context, texts []string) ([][]
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
+	slog.DebugContext(ctx, "sending embeddings request", "url", p.url+"/embeddings", "model", p.model, "body_bytes", len(jsonBody), "body", truncateForDebug(string(jsonBody), debugBodyMaxLen))
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.url+"/embeddings", bytes.NewReader(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
@@ -88,6 +112,8 @@ func (p *openAICompatible) embedBatch(ctx context.Context, texts []string) ([][]
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
+
+	slog.DebugContext(ctx, "embeddings response received", "status", resp.StatusCode, "body_bytes", len(respBody), "body", truncateForDebug(string(respBody), debugBodyMaxLen))
 
 	if resp.StatusCode != http.StatusOK {
 		slog.ErrorContext(ctx, "embeddings request failed", "status", resp.StatusCode, "body", string(respBody))
@@ -111,7 +137,12 @@ func (p *openAICompatible) embedBatch(ctx context.Context, texts []string) ([][]
 	if len(out) != len(texts) {
 		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(out))
 	}
-	slog.DebugContext(ctx, "embeddings received", "count", len(out))
+
+	dims := 0
+	if len(out) > 0 {
+		dims = len(out[0])
+	}
+	slog.DebugContext(ctx, "embeddings received", "count", len(out), "dimensions", dims)
 
 	return out, nil
 }

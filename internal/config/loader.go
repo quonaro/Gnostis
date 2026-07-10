@@ -16,11 +16,11 @@ var envPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\
 // Load reads, interpolates, parses, and validates the configuration file.
 func Load(path string) (Config, error) {
 	if path == "" {
-		home, err := os.UserHomeDir()
+		var err error
+		path, err = resolveDefaultConfigPath()
 		if err != nil {
-			return Config{}, fmt.Errorf("resolve home dir: %w", err)
+			return Config{}, fmt.Errorf("resolve default config path: %w", err)
 		}
-		path = filepath.Join(home, ".gnostis", "config.yaml")
 	}
 	slog.Info("loading config", "path", path)
 
@@ -46,6 +46,23 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
+func resolveDefaultConfigPath() (string, error) {
+	exe, err := os.Executable()
+	if err == nil {
+		binDir := filepath.Dir(exe)
+		binConfig := filepath.Join(binDir, "config.yaml")
+		if _, err := os.Stat(binConfig); err == nil {
+			return binConfig, nil
+		}
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir: %w", err)
+	}
+	return filepath.Join(home, ".gnostis", "config.yaml"), nil
+}
+
 func interpolateEnv(input string) string {
 	return envPattern.ReplaceAllStringFunc(input, func(match string) string {
 		parts := envPattern.FindStringSubmatch(match)
@@ -68,6 +85,11 @@ func interpolateEnv(input string) string {
 }
 
 func applyDefaults(cfg *Config) {
+	if cfg.LogLevel == "" {
+		cfg.LogLevel = defaultLogLevel
+	}
+	cfg.LogLevel = strings.ToLower(cfg.LogLevel)
+
 	if cfg.DataDir == "" {
 		cfg.DataDir = interpolateEnv(defaultDataDir)
 	}
@@ -118,6 +140,12 @@ func applyDefaults(cfg *Config) {
 }
 
 func validate(cfg *Config) error {
+	switch cfg.LogLevel {
+	case "debug", "info", "warn", "error":
+	default:
+		return fmt.Errorf("unsupported log_level: %s", cfg.LogLevel)
+	}
+
 	if len(cfg.Directories) == 0 {
 		return fmt.Errorf("at least one directory must be configured")
 	}
