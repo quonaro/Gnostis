@@ -24,26 +24,33 @@ type Finder interface {
 	SearchFuzzy(query string) []symbol.Location
 }
 
+// Reindexer reindexes specific files so the search engine reflects their latest content.
+type Reindexer interface {
+	ReindexFiles(ctx context.Context, paths []string) error
+}
+
 // Server wraps the mcp-go server and exposes Gnostis tools.
 type Server struct {
-	server   *mcpServer.MCPServer
-	http     *mcpServer.StreamableHTTPServer
-	name     string
-	version  string
-	engine   Searcher
-	symbols  Finder
-	projects []project.Project
+	server    *mcpServer.MCPServer
+	http      *mcpServer.StreamableHTTPServer
+	name      string
+	version   string
+	engine    Searcher
+	symbols   Finder
+	reindexer Reindexer
+	projects  []project.Project
 }
 
 // New creates and configures the MCP server.
-func New(name, version string, engine Searcher, symbols Finder, projects []project.Project) *Server {
+func New(name, version string, engine Searcher, symbols Finder, reindexer Reindexer, projects []project.Project) *Server {
 	slog.Info("creating mcp server", "name", name, "version", version)
 	s := &Server{
-		name:     name,
-		version:  version,
-		engine:   engine,
-		symbols:  symbols,
-		projects: projects,
+		name:      name,
+		version:   version,
+		engine:    engine,
+		symbols:   symbols,
+		reindexer: reindexer,
+		projects:  projects,
 	}
 
 	s.server = mcpServer.NewMCPServer(
@@ -94,6 +101,7 @@ func (s *Server) registerTools() {
 	s.server.AddTool(directoryTreeTool(), mcp.NewTypedToolHandler(s.directoryTree))
 	s.server.AddTool(getRecentChangesTool(), mcp.NewTypedToolHandler(s.getRecentChanges))
 	s.server.AddTool(queryDocumentationTool(), mcp.NewTypedToolHandler(s.queryDocumentation))
+	s.server.AddTool(reindexFilesTool(), mcp.NewTypedToolHandler(s.reindexFiles))
 }
 
 func searchCodebaseTool() mcp.Tool {

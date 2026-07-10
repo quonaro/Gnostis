@@ -7,7 +7,7 @@ import (
 )
 
 func TestIsPathAllowed_PrefixSiblings(t *testing.T) {
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, []project.Project{
 		{Name: "tmp", Path: "/tmp"},
 	})
 

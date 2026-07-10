@@ -114,6 +114,16 @@ Semantic search restricted to Markdown and README files.
 
 **Returns:** array of chunks.
 
+## `reindex_files`
+
+Reindex specific files so their latest content is searchable. Only paths inside the indexed projects are accepted.
+
+**Parameters:**
+
+- `paths` (array of strings, required) — absolute file paths to reindex.
+
+**Returns:** object with `reindexed` array of paths.
+
 ## Planned tools
 
 - `find_references`: locate all usages of a symbol.

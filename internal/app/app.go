@@ -71,7 +71,6 @@ func New(cfg config.Config) (*App, error) {
 		return nil, fmt.Errorf("create symbol index: %w", err)
 	}
 
-	mcpSrv := mcpServer.New(cfg.MCP.Name, cfg.MCP.Version, engine, symbolIndex, projects)
 	embeddingCache := make(map[string][]float32)
 
 	a := &App{
@@ -84,9 +83,11 @@ func New(cfg config.Config) (*App, error) {
 		indexer:        indexer.New(),
 		chunker:        chunker.New(),
 		symbolIndex:    symbolIndex,
-		mcp:            mcpSrv,
 		embeddingCache: embeddingCache,
 	}
+
+	mcpSrv := mcpServer.New(cfg.MCP.Name, cfg.MCP.Version, engine, symbolIndex, a, projects)
+	a.mcp = mcpSrv
 
 	w := watcher.New(dirs, func(path string) {
 		if err := reindexFile(context.Background(), path, dirs, projects, a.store, a.symbolIndex, a.provider, a.embeddingCache); err != nil {
@@ -225,4 +226,17 @@ func (a *App) Info() (provider, model string, symbols int) {
 // InitialIndex performs the first-time indexing of all configured directories.
 func (a *App) InitialIndex(ctx context.Context) error {
 	return a.initialIndex(ctx)
+}
+
+// ReindexFiles reindexes the given file paths and persists the symbol index.
+func (a *App) ReindexFiles(ctx context.Context, paths []string) error {
+	for _, path := range paths {
+		if err := reindexFile(ctx, path, a.dirs, a.projects, a.store, a.symbolIndex, a.provider, a.embeddingCache); err != nil {
+			return fmt.Errorf("reindex %s: %w", path, err)
+		}
+	}
+	if err := a.symbolIndex.Save(); err != nil {
+		return fmt.Errorf("save symbol index: %w", err)
+	}
+	return nil
 }

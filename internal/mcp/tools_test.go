@@ -26,7 +26,7 @@ func (m *mockSearcher) Search(ctx context.Context, query string, filters map[str
 }
 
 func TestSearchCodebase_EmptyQuery(t *testing.T) {
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil)
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, nil)
 	req := mcp.CallToolRequest{}
 
 	res, err := srv.searchCodebase(context.Background(), req, searchCodebaseArgs{})
@@ -54,7 +54,7 @@ func TestSearchCodebase_Results(t *testing.T) {
 			Content:   "func Bar() {}",
 		},
 	}}
-	srv := New("test", "1.0.0", mock, nil, nil)
+	srv := New("test", "1.0.0", mock, nil, nil, nil)
 	req := mcp.CallToolRequest{}
 	args := searchCodebaseArgs{Query: "find bar", TopK: 5, IncludeContent: true}
 
@@ -102,7 +102,7 @@ func TestFindSymbol_Match(t *testing.T) {
 			Content:   "func Baz() {}",
 		},
 	}}
-	srv := New("test", "1.0.0", mock, nil, nil)
+	srv := New("test", "1.0.0", mock, nil, nil, nil)
 	req := mcp.CallToolRequest{}
 	args := findSymbolArgs{Name: "Bar"}
 
@@ -128,7 +128,7 @@ func TestGetFileContext(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: dir}})
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, []project.Project{{Name: "test", Path: dir}})
 	req := mcp.CallToolRequest{}
 	args := getFileContextArgs{Path: path, StartLine: 2, EndLine: 4}
 
@@ -149,7 +149,7 @@ func TestListProjects(t *testing.T) {
 		{Name: "foo", Path: "/projects/foo"},
 		{Name: "bar", Path: "/projects/bar"},
 	}
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, projects)
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, projects)
 	req := mcp.CallToolRequest{}
 
 	res, err := srv.listProjects(context.Background(), req, listProjectsArgs{})
@@ -181,7 +181,7 @@ func TestListFiles(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: dir}})
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, []project.Project{{Name: "test", Path: dir}})
 	res, err := srv.listFiles(context.Background(), mcp.CallToolRequest{}, listFilesArgs{Project: "test", Pattern: "*.go"})
 	if err != nil {
 		t.Fatalf("listFiles: %v", err)
@@ -201,7 +201,7 @@ func TestGrep(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: dir}})
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, []project.Project{{Name: "test", Path: dir}})
 	res, err := srv.grep(context.Background(), mcp.CallToolRequest{}, grepArgs{Project: "test", Query: "Foo"})
 	if err != nil {
 		t.Fatalf("grep: %v", err)
@@ -221,7 +221,7 @@ func TestGrep_Regex(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: dir}})
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, []project.Project{{Name: "test", Path: dir}})
 	res, err := srv.grep(context.Background(), mcp.CallToolRequest{}, grepArgs{Project: "test", Query: `func [A-Z][a-z]+`, Regex: true})
 	if err != nil {
 		t.Fatalf("grep: %v", err)
@@ -244,7 +244,7 @@ func TestDirectoryTree(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: dir}})
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, []project.Project{{Name: "test", Path: dir}})
 	res, err := srv.directoryTree(context.Background(), mcp.CallToolRequest{}, directoryTreeArgs{Project: "test", Depth: 2})
 	if err != nil {
 		t.Fatalf("directoryTree: %v", err)
@@ -264,7 +264,7 @@ func TestGetRecentChanges(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: dir}})
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, []project.Project{{Name: "test", Path: dir}})
 	res, err := srv.getRecentChanges(context.Background(), mcp.CallToolRequest{}, getRecentChangesArgs{Project: "test", Minutes: 60})
 	if err != nil {
 		t.Fatalf("getRecentChanges: %v", err)
@@ -288,7 +288,7 @@ func TestQueryDocumentation(t *testing.T) {
 		Score:     0.95,
 		Content:   "docs",
 	}}}
-	srv := New("test", "1.0.0", mock, nil, nil)
+	srv := New("test", "1.0.0", mock, nil, nil, nil)
 	res, err := srv.queryDocumentation(context.Background(), mcp.CallToolRequest{}, queryDocumentationArgs{Query: "how to run"})
 	if err != nil {
 		t.Fatalf("queryDocumentation: %v", err)
@@ -300,7 +300,7 @@ func TestQueryDocumentation(t *testing.T) {
 }
 
 func TestGetFileContext_OutsideProject(t *testing.T) {
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: "/tmp"}})
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, []project.Project{{Name: "test", Path: "/tmp"}})
 	res, err := srv.getFileContext(context.Background(), mcp.CallToolRequest{}, getFileContextArgs{Path: "/etc/passwd"})
 	if err != nil {
 		t.Fatalf("getFileContext: %v", err)
