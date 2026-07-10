@@ -1,0 +1,28 @@
+# Binaries
+gnostis
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go
+*.test
+*.out
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# AI
+.devin
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Gnostis runtime data
+.gnostis/

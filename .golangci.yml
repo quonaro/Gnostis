@@ -1,0 +1,27 @@
+version: "2"
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+linters:
+  default: standard
+  enable:
+  - errcheck
+  - staticcheck
+  disable:
+  - depguard
+  settings:
+    errcheck:
+      exclude-functions:
+      - fmt.Fprintf
+      - fmt.Fprintln
+  exclusions:
+    paths:
+    - vendor
+
+formatters:
+  enable:
+  - gofmt
+  - goimports
