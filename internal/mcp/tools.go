@@ -11,6 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/quonaro/gnostis/internal/search"
+	"github.com/quonaro/gnostis/internal/symbol"
 )
 
 type searchCodebaseArgs struct {
@@ -106,6 +107,39 @@ func (s *Server) findSymbol(ctx context.Context, request mcp.CallToolRequest, ar
 		return mcp.NewToolResultError("name is required"), nil
 	}
 
+	var matched []symbol.Location
+	if s.symbols != nil {
+		matched = s.symbols.Lookup(args.Name)
+		if len(matched) == 0 {
+			matched = s.symbols.SearchFuzzy(args.Name)
+		}
+	}
+
+	matched = filterSymbolLocations(matched, args.Project, args.Language)
+
+	// If the symbol index has no match, fall back to semantic search.
+	if len(matched) == 0 {
+		items, err := s.findSymbolSemantic(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		matched = items
+	}
+
+	items := make([]searchResultItem, len(matched))
+	for i, loc := range matched {
+		items[i] = symbolLocationToItem(loc)
+	}
+
+	data, err := json.Marshal(items)
+	if err != nil {
+		return nil, fmt.Errorf("marshal results: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(data)), nil
+}
+
+func (s *Server) findSymbolSemantic(ctx context.Context, args findSymbolArgs) ([]symbol.Location, error) {
 	filters := map[string]string{}
 	if args.Project != "" {
 		filters["project_id"] = args.Project
@@ -120,38 +154,58 @@ func (s *Server) findSymbol(ctx context.Context, request mcp.CallToolRequest, ar
 		slog.ErrorContext(ctx, "find_symbol failed", "name", args.Name, "error", err)
 		return nil, fmt.Errorf("search symbol: %w", err)
 	}
-	slog.DebugContext(ctx, "find_symbol results", "count", len(results))
+	slog.DebugContext(ctx, "find_symbol semantic results", "count", len(results))
 
-	var matched []search.Result
 	nameLower := strings.ToLower(args.Name)
+	var matched []symbol.Location
 	for _, r := range results {
 		if strings.EqualFold(r.Symbol, args.Name) || strings.Contains(strings.ToLower(r.Symbol), nameLower) {
-			matched = append(matched, r)
+			matched = append(matched, searchResultToSymbolLocation(r))
 		}
 	}
+	return matched, nil
+}
 
-	items := make([]searchResultItem, len(matched))
-	for i, r := range matched {
-		items[i] = searchResultItem{
-			ID:        r.ID,
-			ProjectID: r.ProjectID,
-			Path:      r.Path,
-			Language:  r.Language,
-			Symbol:    r.Symbol,
-			Signature: r.Signature,
-			StartLine: r.StartLine,
-			EndLine:   r.EndLine,
-			Score:     r.Score,
-			Content:   r.Content,
+func filterSymbolLocations(locs []symbol.Location, project, language string) []symbol.Location {
+	if project == "" && language == "" {
+		return locs
+	}
+	filtered := make([]symbol.Location, 0, len(locs))
+	for _, loc := range locs {
+		if project != "" && loc.ProjectID != project {
+			continue
 		}
+		if language != "" && !strings.EqualFold(loc.Language, language) {
+			continue
+		}
+		filtered = append(filtered, loc)
 	}
+	return filtered
+}
 
-	data, err := json.Marshal(items)
-	if err != nil {
-		return nil, fmt.Errorf("marshal results: %w", err)
+func symbolLocationToItem(loc symbol.Location) searchResultItem {
+	return searchResultItem{
+		ProjectID: loc.ProjectID,
+		Path:      loc.Path,
+		Language:  loc.Language,
+		Symbol:    loc.Symbol,
+		Signature: loc.Signature,
+		StartLine: loc.StartLine,
+		EndLine:   loc.EndLine,
+		Score:     1.0,
 	}
+}
 
-	return mcp.NewToolResultText(string(data)), nil
+func searchResultToSymbolLocation(r search.Result) symbol.Location {
+	return symbol.Location{
+		ProjectID: r.ProjectID,
+		Path:      r.Path,
+		Language:  r.Language,
+		Symbol:    r.Symbol,
+		Signature: r.Signature,
+		StartLine: r.StartLine,
+		EndLine:   r.EndLine,
+	}
 }
 
 func (s *Server) getFileContext(ctx context.Context, request mcp.CallToolRequest, args getFileContextArgs) (*mcp.CallToolResult, error) {
@@ -160,9 +214,14 @@ func (s *Server) getFileContext(ctx context.Context, request mcp.CallToolRequest
 		return mcp.NewToolResultError("path is required"), nil
 	}
 
-	content, err := os.ReadFile(args.Path)
+	clean, err := s.resolvePath("", args.Path)
 	if err != nil {
-		slog.ErrorContext(ctx, "get_file_context failed", "path", args.Path, "error", err)
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	content, err := os.ReadFile(clean)
+	if err != nil {
+		slog.ErrorContext(ctx, "get_file_context failed", "path", clean, "error", err)
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 

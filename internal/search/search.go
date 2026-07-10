@@ -26,12 +26,12 @@ type Result struct {
 
 // Engine runs semantic searches against the vector store.
 type Engine struct {
-	store    *store.Store
+	store    store.VectorStore
 	provider embeddings.Provider
 }
 
 // New creates a search engine.
-func New(s *store.Store, p embeddings.Provider) *Engine {
+func New(s store.VectorStore, p embeddings.Provider) *Engine {
 	return &Engine{store: s, provider: p}
 }
 

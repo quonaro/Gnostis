@@ -17,12 +17,27 @@ import (
 const collectionName = "code_chunks"
 const hashFileName = "file_hashes.json"
 
+// VectorStore is the storage interface consumed by the search engine and indexer.
+// It is implemented by the default chromem-backed Store and can be implemented by
+// other backends in the future (FAISS, Qdrant, Postgres, etc.).
+type VectorStore interface {
+	AddChunks(ctx context.Context, chunks []chunker.Chunk, embeddings [][]float32) error
+	Query(ctx context.Context, embedding []float32, n int, filters map[string]string) ([]chromem.Result, error)
+	DeleteByPath(ctx context.Context, path string) error
+	GetFileHash(ctx context.Context, path string) (string, error)
+	Paths() []string
+	Count() int
+}
+
 // Store persists chunks in chromem-go and tracks file hashes for incremental indexing.
 type Store struct {
 	col      *chromem.Collection
 	hashFile string
 	hashes   map[string]string
 }
+
+// compile-time check that Store implements VectorStore.
+var _ VectorStore = (*Store)(nil)
 
 // New opens or creates a persistent chromem-go database.
 func New(ctx context.Context, dataDir string) (*Store, error) {
@@ -138,6 +153,15 @@ func chunkMetadata(ch chunker.Chunk) map[string]string {
 // GetFileHash returns the stored hash for a file path.
 func (s *Store) GetFileHash(_ context.Context, path string) (string, error) {
 	return s.hashes[path], nil
+}
+
+// Paths returns all file paths currently tracked by the store.
+func (s *Store) Paths() []string {
+	paths := make([]string, 0, len(s.hashes))
+	for p := range s.hashes {
+		paths = append(paths, p)
+	}
+	return paths
 }
 
 func (s *Store) loadHashes() error {

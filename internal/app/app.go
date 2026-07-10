@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -18,21 +20,24 @@ import (
 	"github.com/quonaro/gnostis/internal/project"
 	"github.com/quonaro/gnostis/internal/search"
 	"github.com/quonaro/gnostis/internal/store"
+	"github.com/quonaro/gnostis/internal/symbol"
 	"github.com/quonaro/gnostis/internal/watcher"
 )
 
 // App orchestrates configuration, indexing, search, and the MCP server.
 type App struct {
-	cfg      config.Config
-	dirs     []directory.Directory
-	projects []project.Project
-	store    *store.Store
-	provider embeddings.Provider
-	engine   *search.Engine
-	indexer  *indexer.Indexer
-	chunker  *chunker.Chunker
-	watcher  *watcher.Watcher
-	mcp      *mcpServer.Server
+	cfg            config.Config
+	dirs           []directory.Directory
+	projects       []project.Project
+	store          store.VectorStore
+	provider       embeddings.Provider
+	engine         *search.Engine
+	indexer        *indexer.Indexer
+	chunker        *chunker.Chunker
+	symbolIndex    *symbol.Index
+	watcher        *watcher.Watcher
+	mcp            *mcpServer.Server
+	embeddingCache map[string][]float32
 }
 
 // New builds the application from configuration.
@@ -60,49 +65,93 @@ func New(cfg config.Config) (*App, error) {
 	}
 
 	engine := search.New(st, provider)
-	mcpSrv := mcpServer.New(cfg.MCP.Name, cfg.MCP.Version, engine, projects)
+
+	symbolIndex, err := symbol.New(filepath.Join(cfg.DataDir, "symbols.json"))
+	if err != nil {
+		return nil, fmt.Errorf("create symbol index: %w", err)
+	}
+
+	mcpSrv := mcpServer.New(cfg.MCP.Name, cfg.MCP.Version, engine, symbolIndex, projects)
+	embeddingCache := make(map[string][]float32)
+
+	a := &App{
+		cfg:            cfg,
+		dirs:           dirs,
+		projects:       projects,
+		store:          st,
+		provider:       provider,
+		engine:         engine,
+		indexer:        indexer.New(),
+		chunker:        chunker.New(),
+		symbolIndex:    symbolIndex,
+		mcp:            mcpSrv,
+		embeddingCache: embeddingCache,
+	}
 
 	w := watcher.New(dirs, func(path string) {
-		if err := reindexFile(context.Background(), path, dirs, projects, st, provider); err != nil {
+		if err := reindexFile(context.Background(), path, dirs, projects, a.store, a.symbolIndex, a.provider, a.embeddingCache); err != nil {
 			slog.Error("reindex file", "path", path, "error", err)
+			return
+		}
+		if err := a.symbolIndex.Save(); err != nil {
+			slog.Error("save symbol index", "error", err)
 		}
 	})
+	a.watcher = w
 
-	return &App{
-		cfg:      cfg,
-		dirs:     dirs,
-		projects: projects,
-		store:    st,
-		provider: provider,
-		engine:   engine,
-		indexer:  indexer.New(),
-		chunker:  chunker.New(),
-		watcher:  w,
-		mcp:      mcpSrv,
-	}, nil
+	return a, nil
 }
 
-// Run performs initial indexing, starts the watcher, and serves MCP.
+// Run serves MCP immediately while performing initial indexing and starting the
+// watcher in the background. The first component error stops the app.
 func (a *App) Run(ctx context.Context) error {
 	slog.InfoContext(ctx, "starting app")
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	if err := a.initialIndex(ctx); err != nil {
-		return fmt.Errorf("initial index: %w", err)
+	errCh := make(chan error, 2)
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		slog.InfoContext(ctx, "serving mcp", "name", a.cfg.MCP.Name, "version", a.cfg.MCP.Version, "transport", a.cfg.MCP.Transport)
+		var err error
+		switch a.cfg.MCP.Transport {
+		case "streamable-http":
+			err = a.runHTTP(ctx)
+		default:
+			err = a.mcp.Start(ctx)
+		}
+		if err != nil {
+			errCh <- err
+		}
+		cancel()
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := a.initialIndex(ctx); err != nil {
+			errCh <- fmt.Errorf("initial index: %w", err)
+			cancel()
+			return
+		}
+		if err := a.watcher.Start(); err != nil {
+			errCh <- fmt.Errorf("start watcher: %w", err)
+			cancel()
+			return
+		}
+		<-ctx.Done()
+		_ = a.watcher.Stop()
+	}()
+
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		return err
 	}
-
-	if err := a.watcher.Start(); err != nil {
-		return fmt.Errorf("start watcher: %w", err)
-	}
-	defer func() { _ = a.watcher.Stop() }()
-
-	slog.InfoContext(ctx, "serving mcp", "name", a.cfg.MCP.Name, "version", a.cfg.MCP.Version, "transport", a.cfg.MCP.Transport)
-
-	switch a.cfg.MCP.Transport {
-	case "streamable-http":
-		return a.runHTTP(ctx)
-	default:
-		return a.mcp.Start(ctx)
-	}
+	return nil
 }
 
 func (a *App) runHTTP(ctx context.Context) error {
@@ -135,14 +184,28 @@ func (a *App) runHTTP(ctx context.Context) error {
 }
 
 func (a *App) initialIndex(ctx context.Context) error {
+	a.cleanupDeletedFiles(ctx)
 	for i, dir := range a.dirs {
 		slog.InfoContext(ctx, "indexing directory", "path", dir.Path, "project", a.projects[i].Name)
-		if err := indexDirectory(ctx, dir, a.projects[i], a.indexer, a.chunker, a.provider, a.store); err != nil {
+		if err := indexDirectory(ctx, dir, a.projects[i], a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache); err != nil {
 			return fmt.Errorf("index %s: %w", dir.Path, err)
 		}
 	}
+	if err := a.symbolIndex.Save(); err != nil {
+		slog.ErrorContext(ctx, "save symbol index", "error", err)
+	}
 	slog.InfoContext(ctx, "initial index complete", "chunks", a.store.Count())
 	return nil
+}
+
+func (a *App) cleanupDeletedFiles(ctx context.Context) {
+	for _, path := range a.store.Paths() {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			slog.InfoContext(ctx, "removing deleted file from index", "path", path)
+			_ = a.store.DeleteByPath(ctx, path)
+			a.symbolIndex.RemoveByPath(path)
+		}
+	}
 }
 
 // Status returns the configured project names and current chunk count.
@@ -152,6 +215,11 @@ func (a *App) Status() ([]string, int) {
 		names[i] = p.Name
 	}
 	return names, a.store.Count()
+}
+
+// Info returns runtime metadata about the active provider and index.
+func (a *App) Info() (provider, model string, symbols int) {
+	return a.provider.ModelName(), a.cfg.Embeddings.Model, a.symbolIndex.Count()
 }
 
 // InitialIndex performs the first-time indexing of all configured directories.

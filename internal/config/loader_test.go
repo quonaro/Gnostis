@@ -78,6 +78,36 @@ directories:
 	}
 }
 
+func TestLoadONNXDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	data := `
+embeddings:
+  provider: onnx
+directories:
+  - path: ` + dir + `
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Embeddings.Provider != "onnx" {
+		t.Errorf("provider = %q, want onnx", cfg.Embeddings.Provider)
+	}
+	if cfg.Embeddings.Model != defaultONNXModel {
+		t.Errorf("model = %q, want %q", cfg.Embeddings.Model, defaultONNXModel)
+	}
+	wantModelPath := filepath.Join(cfg.DataDir, defaultModelsSubdir, sanitizeModelName(defaultONNXModel))
+	if cfg.Embeddings.ModelPath != wantModelPath {
+		t.Errorf("model_path = %q, want %q", cfg.Embeddings.ModelPath, wantModelPath)
+	}
+}
+
 func TestLoadValidation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

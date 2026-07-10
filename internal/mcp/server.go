@@ -10,11 +10,18 @@ import (
 
 	"github.com/quonaro/gnostis/internal/project"
 	"github.com/quonaro/gnostis/internal/search"
+	"github.com/quonaro/gnostis/internal/symbol"
 )
 
 // Searcher is the subset of the search engine used by MCP tools.
 type Searcher interface {
 	Search(ctx context.Context, query string, filters map[string]string, topK int) ([]search.Result, error)
+}
+
+// Finder is the subset of the symbol index used by MCP tools.
+type Finder interface {
+	Lookup(name string) []symbol.Location
+	SearchFuzzy(query string) []symbol.Location
 }
 
 // Server wraps the mcp-go server and exposes Gnostis tools.
@@ -24,16 +31,18 @@ type Server struct {
 	name     string
 	version  string
 	engine   Searcher
+	symbols  Finder
 	projects []project.Project
 }
 
 // New creates and configures the MCP server.
-func New(name, version string, engine Searcher, projects []project.Project) *Server {
+func New(name, version string, engine Searcher, symbols Finder, projects []project.Project) *Server {
 	slog.Info("creating mcp server", "name", name, "version", version)
 	s := &Server{
 		name:     name,
 		version:  version,
 		engine:   engine,
+		symbols:  symbols,
 		projects: projects,
 	}
 
@@ -80,6 +89,11 @@ func (s *Server) registerTools() {
 	s.server.AddTool(findSymbolTool(), mcp.NewTypedToolHandler(s.findSymbol))
 	s.server.AddTool(getFileContextTool(), mcp.NewTypedToolHandler(s.getFileContext))
 	s.server.AddTool(listProjectsTool(), mcp.NewTypedToolHandler(s.listProjects))
+	s.server.AddTool(grepTool(), mcp.NewTypedToolHandler(s.grep))
+	s.server.AddTool(listFilesTool(), mcp.NewTypedToolHandler(s.listFiles))
+	s.server.AddTool(directoryTreeTool(), mcp.NewTypedToolHandler(s.directoryTree))
+	s.server.AddTool(getRecentChangesTool(), mcp.NewTypedToolHandler(s.getRecentChanges))
+	s.server.AddTool(queryDocumentationTool(), mcp.NewTypedToolHandler(s.queryDocumentation))
 }
 
 func searchCodebaseTool() mcp.Tool {

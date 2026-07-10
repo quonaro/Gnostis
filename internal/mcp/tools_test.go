@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -25,7 +26,7 @@ func (m *mockSearcher) Search(ctx context.Context, query string, filters map[str
 }
 
 func TestSearchCodebase_EmptyQuery(t *testing.T) {
-	srv := New("test", "1.0.0", &mockSearcher{}, nil)
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil)
 	req := mcp.CallToolRequest{}
 
 	res, err := srv.searchCodebase(context.Background(), req, searchCodebaseArgs{})
@@ -53,7 +54,7 @@ func TestSearchCodebase_Results(t *testing.T) {
 			Content:   "func Bar() {}",
 		},
 	}}
-	srv := New("test", "1.0.0", mock, nil)
+	srv := New("test", "1.0.0", mock, nil, nil)
 	req := mcp.CallToolRequest{}
 	args := searchCodebaseArgs{Query: "find bar", TopK: 5, IncludeContent: true}
 
@@ -101,7 +102,7 @@ func TestFindSymbol_Match(t *testing.T) {
 			Content:   "func Baz() {}",
 		},
 	}}
-	srv := New("test", "1.0.0", mock, nil)
+	srv := New("test", "1.0.0", mock, nil, nil)
 	req := mcp.CallToolRequest{}
 	args := findSymbolArgs{Name: "Bar"}
 
@@ -127,7 +128,7 @@ func TestGetFileContext(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	srv := New("test", "1.0.0", &mockSearcher{}, nil)
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: dir}})
 	req := mcp.CallToolRequest{}
 	args := getFileContextArgs{Path: path, StartLine: 2, EndLine: 4}
 
@@ -148,7 +149,7 @@ func TestListProjects(t *testing.T) {
 		{Name: "foo", Path: "/projects/foo"},
 		{Name: "bar", Path: "/projects/bar"},
 	}
-	srv := New("test", "1.0.0", &mockSearcher{}, projects)
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, projects)
 	req := mcp.CallToolRequest{}
 
 	res, err := srv.listProjects(context.Background(), req, listProjectsArgs{})
@@ -168,6 +169,144 @@ func TestListProjects(t *testing.T) {
 	}
 	if got[0].Name != "foo" || got[1].Name != "bar" {
 		t.Errorf("unexpected projects: %+v", got)
+	}
+}
+
+func TestListFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("a"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.md"), []byte("b"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: dir}})
+	res, err := srv.listFiles(context.Background(), mcp.CallToolRequest{}, listFilesArgs{Project: "test", Pattern: "*.go"})
+	if err != nil {
+		t.Fatalf("listFiles: %v", err)
+	}
+	var files []fileEntry
+	if err := json.Unmarshal([]byte(extractText(t, res)), &files); err != nil {
+		t.Fatalf("unmarshal files: %v", err)
+	}
+	if len(files) != 1 || !strings.HasSuffix(files[0].Path, "a.go") {
+		t.Errorf("unexpected files: %+v", files)
+	}
+}
+
+func TestGrep(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("func Foo() {}\nfunc Bar() {}\n"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: dir}})
+	res, err := srv.grep(context.Background(), mcp.CallToolRequest{}, grepArgs{Project: "test", Query: "Foo"})
+	if err != nil {
+		t.Fatalf("grep: %v", err)
+	}
+	var matches []grepMatch
+	if err := json.Unmarshal([]byte(extractText(t, res)), &matches); err != nil {
+		t.Fatalf("unmarshal matches: %v", err)
+	}
+	if len(matches) != 1 || matches[0].Line != 1 {
+		t.Errorf("unexpected matches: %+v", matches)
+	}
+}
+
+func TestGrep_Regex(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("func Foo() {}\nfunc Bar() {}\n"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: dir}})
+	res, err := srv.grep(context.Background(), mcp.CallToolRequest{}, grepArgs{Project: "test", Query: `func [A-Z][a-z]+`, Regex: true})
+	if err != nil {
+		t.Fatalf("grep: %v", err)
+	}
+	var matches []grepMatch
+	if err := json.Unmarshal([]byte(extractText(t, res)), &matches); err != nil {
+		t.Fatalf("unmarshal matches: %v", err)
+	}
+	if len(matches) != 2 {
+		t.Errorf("expected 2 regex matches, got %d", len(matches))
+	}
+}
+
+func TestDirectoryTree(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "file.go"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: dir}})
+	res, err := srv.directoryTree(context.Background(), mcp.CallToolRequest{}, directoryTreeArgs{Project: "test", Depth: 2})
+	if err != nil {
+		t.Fatalf("directoryTree: %v", err)
+	}
+	var tree treeEntry
+	if err := json.Unmarshal([]byte(extractText(t, res)), &tree); err != nil {
+		t.Fatalf("unmarshal tree: %v", err)
+	}
+	if tree.Type != "dir" || len(tree.Children) != 1 {
+		t.Errorf("unexpected tree: %+v", tree)
+	}
+}
+
+func TestGetRecentChanges(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: dir}})
+	res, err := srv.getRecentChanges(context.Background(), mcp.CallToolRequest{}, getRecentChangesArgs{Project: "test", Minutes: 60})
+	if err != nil {
+		t.Fatalf("getRecentChanges: %v", err)
+	}
+	var changes []recentChange
+	if err := json.Unmarshal([]byte(extractText(t, res)), &changes); err != nil {
+		t.Fatalf("unmarshal changes: %v", err)
+	}
+	if len(changes) != 1 {
+		t.Errorf("expected 1 recent change, got %d", len(changes))
+	}
+}
+
+func TestQueryDocumentation(t *testing.T) {
+	mock := &mockSearcher{results: []search.Result{{
+		ID:        "doc-1",
+		ProjectID: "proj",
+		Path:      "/docs/README.md",
+		Language:  "markdown",
+		Symbol:    "",
+		Score:     0.95,
+		Content:   "docs",
+	}}}
+	srv := New("test", "1.0.0", mock, nil, nil)
+	res, err := srv.queryDocumentation(context.Background(), mcp.CallToolRequest{}, queryDocumentationArgs{Query: "how to run"})
+	if err != nil {
+		t.Fatalf("queryDocumentation: %v", err)
+	}
+	items := extractResultItems(t, res)
+	if len(items) != 1 || items[0].Language != "markdown" {
+		t.Errorf("unexpected documentation results: %+v", items)
+	}
+}
+
+func TestGetFileContext_OutsideProject(t *testing.T) {
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, []project.Project{{Name: "test", Path: "/tmp"}})
+	res, err := srv.getFileContext(context.Background(), mcp.CallToolRequest{}, getFileContextArgs{Path: "/etc/passwd"})
+	if err != nil {
+		t.Fatalf("getFileContext: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected error result for path outside project")
 	}
 }
 

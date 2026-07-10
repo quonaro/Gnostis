@@ -23,8 +23,12 @@ func indexStatusHandler(_ context.Context, nctx engine.NativeContext) error {
 	}
 
 	names, count := application.Status()
+	provider, model, symbols := application.Info()
+	_, _ = fmt.Fprintf(nctx.Stdout, "provider: %s\n", provider)
+	_, _ = fmt.Fprintf(nctx.Stdout, "model: %s\n", model)
 	_, _ = fmt.Fprintf(nctx.Stdout, "projects: %s\n", strings.Join(names, ", "))
 	_, _ = fmt.Fprintf(nctx.Stdout, "chunks: %d\n", count)
+	_, _ = fmt.Fprintf(nctx.Stdout, "symbols: %d\n", symbols)
 	return nil
 }
 
