@@ -98,14 +98,14 @@ func (a *App) Run(ctx context.Context) error {
 	slog.InfoContext(ctx, "serving mcp", "name", a.cfg.MCP.Name, "version", a.cfg.MCP.Version, "transport", a.cfg.MCP.Transport)
 
 	switch a.cfg.MCP.Transport {
-	case "sse":
-		return a.runSSE(ctx)
+	case "streamable-http":
+		return a.runHTTP(ctx)
 	default:
 		return a.mcp.Start(ctx)
 	}
 }
 
-func (a *App) runSSE(ctx context.Context) error {
+func (a *App) runHTTP(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -114,8 +114,8 @@ func (a *App) runSSE(ctx context.Context) error {
 	defer signal.Stop(sigChan)
 
 	go func() {
-		if err := a.mcp.StartSSE(ctx, a.cfg.MCP.Address); err != nil {
-			slog.ErrorContext(ctx, "mcp sse server stopped", "error", err)
+		if err := a.mcp.StartHTTP(ctx, a.cfg.MCP.Address); err != nil {
+			slog.ErrorContext(ctx, "mcp http server stopped", "error", err)
 			cancel()
 		}
 	}()
@@ -128,8 +128,8 @@ func (a *App) runSSE(ctx context.Context) error {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
-	if err := a.mcp.StopSSE(shutdownCtx); err != nil {
-		slog.ErrorContext(ctx, "stop mcp sse server", "error", err)
+	if err := a.mcp.StopHTTP(shutdownCtx); err != nil {
+		slog.ErrorContext(ctx, "stop mcp http server", "error", err)
 	}
 	return nil
 }

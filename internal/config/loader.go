@@ -181,7 +181,7 @@ func validate(cfg *Config) error {
 	}
 
 	transport := strings.ToLower(cfg.MCP.Transport)
-	if transport != "stdio" && transport != "sse" {
+	if transport != "stdio" && transport != "streamable-http" {
 		return fmt.Errorf("unsupported mcp transport: %s", cfg.MCP.Transport)
 	}
 

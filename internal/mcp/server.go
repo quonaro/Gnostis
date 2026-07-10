@@ -20,7 +20,7 @@ type Searcher interface {
 // Server wraps the mcp-go server and exposes Gnostis tools.
 type Server struct {
 	server   *mcpServer.MCPServer
-	sse      *mcpServer.SSEServer
+	http     *mcpServer.StreamableHTTPServer
 	name     string
 	version  string
 	engine   Searcher
@@ -56,22 +56,22 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
-// StartSSE runs the MCP server over HTTP/SSE on the given address.
-func (s *Server) StartSSE(ctx context.Context, addr string) error {
-	slog.InfoContext(ctx, "starting mcp sse server", "name", s.name, "version", s.version, "address", addr)
-	s.sse = mcpServer.NewSSEServer(s.server)
-	if err := s.sse.Start(addr); err != nil {
-		return fmt.Errorf("serve sse: %w", err)
+// StartHTTP runs the MCP server over Streamable HTTP on the given address.
+func (s *Server) StartHTTP(ctx context.Context, addr string) error {
+	slog.InfoContext(ctx, "starting mcp streamable http server", "name", s.name, "version", s.version, "address", addr)
+	s.http = mcpServer.NewStreamableHTTPServer(s.server)
+	if err := s.http.Start(addr); err != nil {
+		return fmt.Errorf("serve streamable http: %w", err)
 	}
 	return nil
 }
 
-// StopSSE gracefully shuts down the SSE server.
-func (s *Server) StopSSE(ctx context.Context) error {
-	if s.sse == nil {
+// StopHTTP gracefully shuts down the Streamable HTTP server.
+func (s *Server) StopHTTP(ctx context.Context) error {
+	if s.http == nil {
 		return nil
 	}
-	return s.sse.Shutdown(ctx)
+	return s.http.Shutdown(ctx)
 }
 
 func (s *Server) registerTools() {

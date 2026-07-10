@@ -60,7 +60,7 @@ directories:
 mcp:
   name: gnostis
   version: "0.1.0"
-  transport: sse
+  transport: streamable-http
   address: "127.0.0.1:8080"
 ```
 
@@ -99,8 +99,8 @@ List of indexing roots. Each entry supports:
 
 - `name`: server name.
 - `version`: server version.
-- `transport`: `stdio` or `sse`; `stdio` is recommended for editors, `sse` runs a background HTTP server.
-- `address`: listen address for `sse` transport. Default: `:8080`.
+- `transport`: `stdio` or `streamable-http`; `stdio` is recommended for editors, `streamable-http` runs a background HTTP server (MCP Streamable HTTP, endpoint `/mcp`).
+- `address`: listen address for `streamable-http` transport. Default: `:8080`.
 
 ## Filter precedence
 
