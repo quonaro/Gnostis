@@ -34,6 +34,11 @@ builds:
     env:
     - CC=x86_64-w64-mingw32-gcc
     - CXX=x86_64-w64-mingw32-g++
+  - goos: windows
+    goarch: arm64
+    env:
+    - CC=aarch64-w64-mingw32-gcc
+    - CXX=aarch64-w64-mingw32-g++
   - goos: darwin
     goarch: amd64
     env:
@@ -70,20 +75,23 @@ builds:
 
 archives:
 - id: gnostis
-  builds:
+  ids:
   - gnostis
   name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
-  format: tar.gz
+  formats:
+  - tar.gz
   files: []
   format_overrides:
   - goos: windows
-    format: zip
+    formats:
+    - zip
 
 - id: gnostis-onnx
-  builds:
+  ids:
   - gnostis-onnx
   name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}-onnx"
-  format: tar.gz
+  formats:
+  - tar.gz
   files: []
 
 checksum:
