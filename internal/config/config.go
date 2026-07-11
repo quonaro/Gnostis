@@ -48,6 +48,7 @@ type MCP struct {
 const (
 	defaultLogLevel     = "info"
 	defaultDataDir      = "${HOME}/.gnostis/data"
+	defaultConfigPath   = "${HOME}/.gnostis/config.yaml"
 	defaultProvider     = "ollama"
 	defaultURL          = "http://localhost:11434/v1"
 	defaultModel        = "nomic-embed-text"

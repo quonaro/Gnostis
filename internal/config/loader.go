@@ -67,28 +67,7 @@ func Load(path string) (Config, error) {
 }
 
 func resolveDefaultConfigPath() (string, error) {
-	exe, err := os.Executable()
-	if err == nil {
-		binDir := filepath.Dir(exe)
-		binConfig := filepath.Join(binDir, "config.yaml")
-		if _, err := os.Stat(binConfig); err == nil {
-			return binConfig, nil
-		}
-	}
-
-	cwd, err := os.Getwd()
-	if err == nil {
-		cwdConfig := filepath.Join(cwd, "config.yaml")
-		if _, err := os.Stat(cwdConfig); err == nil {
-			return cwdConfig, nil
-		}
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve home dir: %w", err)
-	}
-	return filepath.Join(home, ".gnostis", "config.yaml"), nil
+	return interpolateEnv(defaultConfigPath), nil
 }
 
 func interpolateEnv(input string) string {

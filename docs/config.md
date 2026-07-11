@@ -3,9 +3,7 @@
 Gnostis reads its configuration on startup in this order:
 
 1. A path explicitly set via the `GNOSTIS_CONFIG` environment variable.
-2. `config.yaml` located in the same directory as the running binary.
-3. `config.yaml` in the current working directory.
-4. `~/.gnostis/config.yaml` as a fallback.
+2. `~/.gnostis/config.yaml` as the default location.
 
 The following environment variables control startup behavior:
 

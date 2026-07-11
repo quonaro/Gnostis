@@ -122,30 +122,6 @@ func TestLoadValidation(t *testing.T) {
 	}
 }
 
-func TestLoadFromCwd(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-
-	data := `
-log_level: debug
-directories:
-  - path: ` + dir + `
-`
-	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	t.Chdir(dir)
-
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("load from cwd: %v", err)
-	}
-	if cfg.LogLevel != "debug" {
-		t.Errorf("log_level = %q, want debug", cfg.LogLevel)
-	}
-}
-
 func TestResolvePath(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -159,5 +135,22 @@ func TestResolvePath(t *testing.T) {
 	}
 	if resolved != path {
 		t.Errorf("ResolvePath = %q, want %q", resolved, path)
+	}
+}
+
+func TestResolveDefaultPath(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("user home dir: %v", err)
+	}
+
+	resolved, err := ResolvePath("")
+	if err != nil {
+		t.Fatalf("ResolvePath default: %v", err)
+	}
+
+	want := filepath.Join(home, ".gnostis", "config.yaml")
+	if resolved != want {
+		t.Errorf("ResolvePath default = %q, want %q", resolved, want)
 	}
 }
