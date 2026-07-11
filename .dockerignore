@@ -10,3 +10,8 @@ config.yaml
 docker-compose.yml
 Dockerfile
 .dockerignore
+.github
+.air.toml
+.golangci.yml
+.goreleaser.yml
+.pre-commit-config.yaml
