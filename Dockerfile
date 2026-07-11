@@ -1,26 +1,35 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.23-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 WORKDIR /src
 
+# Native amd64 toolchain is already present in the golang image.
+# Install only the ARM64 cross-compiler so we can build linux/arm64
+# without QEMU emulation.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        gcc \
-        libc6-dev \
-        git \
-        ca-certificates \
+        gcc-aarch64-linux-gnu \
+        libc6-dev-arm64-cross \
     && rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./
-RUN GOTOOLCHAIN=auto go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 COPY . .
 
+ARG TARGETARCH
 ARG VERSION=dev
-RUN GOTOOLCHAIN=auto CGO_ENABLED=1 GOOS=linux go build \
-    -ldflags="-s -w -X main.version=${VERSION}" \
-    -o /src/gnostis \
-    ./cmd/gnostis
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    if [ "$TARGETARCH" = "arm64" ]; then \
+      export CC=aarch64-linux-gnu-gcc; \
+      export CXX=aarch64-linux-gnu-g++; \
+    fi && \
+    CGO_ENABLED=1 GOOS=linux GOARCH=$TARGETARCH go build \
+      -ldflags="-s -w -X main.version=${VERSION}" \
+      -o /src/gnostis \
+      ./cmd/gnostis
 
 FROM debian:bookworm-slim
 
