@@ -1,3 +1,5 @@
+//go:build !no_onnx
+
 package onnx
 
 // Embedding inference logic adapted from github.com/clems4ever/all-minilm-l6-v2-go
