@@ -1,7 +1,9 @@
 package mcp
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,7 +85,7 @@ func isTextFile(path string) bool {
 
 	buf := make([]byte, 512)
 	n, err := f.Read(buf)
-	if err != nil && err.Error() != "EOF" {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return false
 	}
 	return !strings.Contains(string(buf[:n]), "\x00")

@@ -8,6 +8,7 @@ package onnx
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -23,7 +24,7 @@ const (
 	inputIDsName      = "input_ids"
 	attentionMaskName = "attention_mask"
 	tokenTypeIDsName  = "token_type_ids"
-	outputName        = "sentence_embedding"
+	outputName        = "last_hidden_state"
 )
 
 var (
@@ -158,7 +159,7 @@ func (p *Provider) Embed(ctx context.Context, texts []string) ([][]float32, erro
 	}
 	defer destroyTensor(tokenTypeIDsTensor)
 
-	outputShape := rt.NewShape(int64(batchSize), int64(p.dim))
+	outputShape := rt.NewShape(int64(batchSize), int64(seqLength), int64(p.dim))
 	outputTensor, err := rt.NewEmptyTensor[float32](outputShape)
 	if err != nil {
 		return nil, fmt.Errorf("create output tensor: %w", err)
@@ -173,17 +174,46 @@ func (p *Provider) Embed(ctx context.Context, texts []string) ([][]float32, erro
 	}
 
 	flat := outputTensor.GetData()
-	expected := batchSize * p.dim
+	expected := batchSize * seqLength * p.dim
 	if len(flat) != expected {
 		return nil, fmt.Errorf("unexpected output size: got %d, want %d", len(flat), expected)
 	}
 
+	return poolAndNormalize(batchSize, seqLength, p.dim, flat, attentionMask), nil
+}
+
+// poolAndNormalize computes masked mean pooling over the token dimension and
+// applies L2 normalization to produce a single embedding vector per input.
+func poolAndNormalize(batchSize, seqLength, dim int, hidden []float32, mask []int64) [][]float32 {
 	results := make([][]float32, batchSize)
-	for i := range batchSize {
-		start := i * p.dim
-		end := start + p.dim
-		results[i] = make([]float32, p.dim)
-		copy(results[i], flat[start:end])
+	stride := seqLength * dim
+	for b := range batchSize {
+		vec := make([]float32, dim)
+		var sumMask float32
+		for s := range seqLength {
+			weight := float32(mask[b*seqLength+s])
+			sumMask += weight
+			offset := b*stride + s*dim
+			for d := range dim {
+				vec[d] += hidden[offset+d] * weight
+			}
+		}
+		if sumMask > 0 {
+			for d := range dim {
+				vec[d] /= sumMask
+			}
+		}
+		var norm float32
+		for d := range dim {
+			norm += vec[d] * vec[d]
+		}
+		if norm > 0 {
+			norm = float32(math.Sqrt(float64(norm)))
+			for d := range dim {
+				vec[d] /= norm
+			}
+		}
+		results[b] = vec
 	}
-	return results, nil
+	return results
 }

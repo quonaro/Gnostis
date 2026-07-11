@@ -140,9 +140,9 @@ func buildTree(root string, depth int) (treeEntry, error) {
 
 func listFilesTool() mcp.Tool {
 	return mcp.NewTool("list_files",
-		mcp.WithDescription("List files in a project directory"),
-		mcp.WithString("project", mcp.Description("Project name")),
-		mcp.WithString("path", mcp.Description("Relative path within the project")),
+		mcp.WithDescription("List files in a project directory. Requires project or path."),
+		mcp.WithString("project", mcp.Description("Project name (required if path is omitted)")),
+		mcp.WithString("path", mcp.Description("Relative path within the project (required if project is omitted)")),
 		mcp.WithString("pattern", mcp.Description("Glob pattern, e.g. *.go"), mcp.DefaultString("*")),
 		mcp.WithBoolean("include_dirs", mcp.Description("Include directories in results"), mcp.DefaultBool(false)),
 	)
@@ -150,18 +150,18 @@ func listFilesTool() mcp.Tool {
 
 func directoryTreeTool() mcp.Tool {
 	return mcp.NewTool("directory_tree",
-		mcp.WithDescription("Return the directory tree up to a given depth"),
-		mcp.WithString("project", mcp.Description("Project name")),
-		mcp.WithString("path", mcp.Description("Relative path within the project")),
+		mcp.WithDescription("Return the directory tree up to a given depth. Requires project or path."),
+		mcp.WithString("project", mcp.Description("Project name (required if path is omitted)")),
+		mcp.WithString("path", mcp.Description("Relative path within the project (required if project is omitted)")),
 		mcp.WithNumber("depth", mcp.Description("Maximum depth"), mcp.DefaultNumber(3)),
 	)
 }
 
 func getRecentChangesTool() mcp.Tool {
 	return mcp.NewTool("get_recent_changes",
-		mcp.WithDescription("List files modified within the last N minutes"),
-		mcp.WithString("project", mcp.Description("Project name")),
-		mcp.WithString("path", mcp.Description("Relative path within the project")),
+		mcp.WithDescription("List files modified within the last N minutes. Requires project or path."),
+		mcp.WithString("project", mcp.Description("Project name (required if path is omitted)")),
+		mcp.WithString("path", mcp.Description("Relative path within the project (required if project is omitted)")),
 		mcp.WithNumber("minutes", mcp.Description("Time window in minutes"), mcp.DefaultNumber(60)),
 	)
 }

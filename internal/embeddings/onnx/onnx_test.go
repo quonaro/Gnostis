@@ -96,6 +96,47 @@ func TestProvider_ModelName(t *testing.T) {
 	}
 }
 
+func TestPoolAndNormalize(t *testing.T) {
+	batchSize := 2
+	seqLength := 3
+	dim := 4
+
+	// First batch: all tokens active. Second batch: one token padded.
+	hidden := []float32{
+		// Batch 0: tokens [1,1,1,1], [2,2,2,2], [3,3,3,3]
+		1, 1, 1, 1,
+		2, 2, 2, 2,
+		3, 3, 3, 3,
+		// Batch 1: tokens [4,4,4,4], [5,5,5,5], [0,0,0,0] (padded)
+		4, 4, 4, 4,
+		5, 5, 5, 5,
+		0, 0, 0, 0,
+	}
+	mask := []int64{
+		1, 1, 1,
+		1, 1, 0,
+	}
+
+	results := poolAndNormalize(batchSize, seqLength, dim, hidden, mask)
+	if len(results) != batchSize {
+		t.Fatalf("got %d results, want %d", len(results), batchSize)
+	}
+
+	// Batch 0 mean is [2,2,2,2]; after L2 norm each value is 2/sqrt(16)=0.5.
+	for _, v := range results[0] {
+		if v != 0.5 {
+			t.Errorf("batch 0 value = %v, want 0.5", v)
+		}
+	}
+
+	// Batch 1 mean is [4.5,4.5,4.5,4.5]; after L2 norm each value is 4.5/sqrt(81)=0.5.
+	for _, v := range results[1] {
+		if v != 0.5 {
+			t.Errorf("batch 1 value = %v, want 0.5", v)
+		}
+	}
+}
+
 func runtimeAvailable(t *testing.T) bool {
 	t.Helper()
 	if err := initialize(""); err != nil {

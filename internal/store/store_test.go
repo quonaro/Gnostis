@@ -88,3 +88,90 @@ func TestStore_HashPersistence(t *testing.T) {
 		t.Fatalf("hash file should exist: %v", err)
 	}
 }
+
+func TestStore_AddChunks_DimensionMismatch(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	s, err := New(ctx, dir)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	chunks := []chunker.Chunk{
+		{ID: "c1", Path: "/tmp/a.go", FileHash: "h1", Content: "package a"},
+		{ID: "c2", Path: "/tmp/b.go", FileHash: "h2", Content: "package b"},
+	}
+	if err := s.AddChunks(ctx, chunks, [][]float32{{0.1, 0.2}, {0.3, 0.4, 0.5}}); err == nil {
+		t.Fatalf("expected dimension mismatch error")
+	}
+}
+
+func TestStore_AddChunks_DimensionMismatchAgainstExisting(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	s, err := New(ctx, dir)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	if err := s.AddChunks(ctx, []chunker.Chunk{
+		{ID: "c1", Path: "/tmp/a.go", FileHash: "h1", Content: "package a"},
+	}, [][]float32{{0.1, 0.2, 0.3}}); err != nil {
+		t.Fatalf("add initial chunks: %v", err)
+	}
+
+	if err := s.AddChunks(ctx, []chunker.Chunk{
+		{ID: "c2", Path: "/tmp/b.go", FileHash: "h2", Content: "package b"},
+	}, [][]float32{{0.1, 0.2}}); err == nil {
+		t.Fatalf("expected dimension mismatch against existing store")
+	}
+}
+
+func TestStore_Query_DimensionMismatch(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	s, err := New(ctx, dir)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	if err := s.AddChunks(ctx, []chunker.Chunk{
+		{ID: "c1", Path: "/tmp/a.go", FileHash: "h1", Content: "package a"},
+	}, [][]float32{{0.1, 0.2, 0.3}}); err != nil {
+		t.Fatalf("add chunks: %v", err)
+	}
+
+	_, err = s.Query(ctx, []float32{0.1, 0.2}, 1, nil)
+	if err == nil {
+		t.Fatalf("expected query dimension mismatch error")
+	}
+}
+
+func TestStore_DimPersistence(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	s, err := New(ctx, dir)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	if err := s.AddChunks(ctx, []chunker.Chunk{
+		{ID: "c1", Path: "/tmp/a.go", FileHash: "h1", Content: "package a"},
+	}, [][]float32{{0.1, 0.2, 0.3, 0.4}}); err != nil {
+		t.Fatalf("add chunks: %v", err)
+	}
+
+	s2, err := New(ctx, dir)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+
+	_, err = s2.Query(ctx, []float32{0.1, 0.2, 0.3}, 1, nil)
+	if err == nil {
+		t.Fatalf("expected persisted dimension mismatch error after reopen")
+	}
+}

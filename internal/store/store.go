@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	chromem "github.com/philippgille/chromem-go"
 
@@ -16,6 +17,7 @@ import (
 
 const collectionName = "code_chunks"
 const hashFileName = "file_hashes.json"
+const dimFileName = "embedding_dim.json"
 
 // VectorStore is the storage interface consumed by the search engine and indexer.
 // It is implemented by the default chromem-backed Store and can be implemented by
@@ -33,7 +35,9 @@ type VectorStore interface {
 type Store struct {
 	col      *chromem.Collection
 	hashFile string
+	dimFile  string
 	hashes   map[string]string
+	dim      int
 }
 
 // compile-time check that Store implements VectorStore.
@@ -59,10 +63,14 @@ func New(ctx context.Context, dataDir string) (*Store, error) {
 	s := &Store{
 		col:      col,
 		hashFile: filepath.Join(dataDir, hashFileName),
+		dimFile:  filepath.Join(dataDir, dimFileName),
 		hashes:   make(map[string]string),
 	}
 	if err := s.loadHashes(); err != nil {
 		return nil, fmt.Errorf("load file hashes: %w", err)
+	}
+	if err := s.loadDim(); err != nil {
+		return nil, fmt.Errorf("load embedding dimension: %w", err)
 	}
 
 	return s, nil
@@ -76,6 +84,14 @@ func (s *Store) AddChunks(ctx context.Context, chunks []chunker.Chunk, embedding
 	slog.DebugContext(ctx, "adding chunks", "count", len(chunks))
 	if len(chunks) != len(embeddings) {
 		return fmt.Errorf("chunks (%d) and embeddings (%d) length mismatch", len(chunks), len(embeddings))
+	}
+
+	dim, err := validateEmbeddings(embeddings)
+	if err != nil {
+		return fmt.Errorf("validate embeddings: %w", err)
+	}
+	if s.dim != 0 && s.dim != dim {
+		return fmt.Errorf("embedding dimension mismatch: expected %d, got %d; clear the data directory and restart after changing the embedding model", s.dim, dim)
 	}
 
 	ids := make([]string, len(chunks))
@@ -94,12 +110,35 @@ func (s *Store) AddChunks(ctx context.Context, chunks []chunker.Chunk, embedding
 	if err := s.col.Add(ctx, ids, embeddings, metadatas, contents); err != nil {
 		return fmt.Errorf("add chunks: %w", err)
 	}
+	if s.dim == 0 {
+		s.dim = dim
+		if err := s.saveDim(); err != nil {
+			return fmt.Errorf("save embedding dimension: %w", err)
+		}
+	}
 	if err := s.saveHashes(); err != nil {
 		return fmt.Errorf("save file hashes: %w", err)
 	}
 	slog.DebugContext(ctx, "added chunks", "count", len(chunks), "total", s.col.Count())
 
 	return nil
+}
+
+// validateEmbeddings checks that all vectors are non-empty and share the same length.
+func validateEmbeddings(vectors [][]float32) (int, error) {
+	if len(vectors) == 0 {
+		return 0, fmt.Errorf("no embeddings")
+	}
+	dim := len(vectors[0])
+	if dim == 0 {
+		return 0, fmt.Errorf("empty embedding vector")
+	}
+	for i, v := range vectors {
+		if len(v) != dim {
+			return 0, fmt.Errorf("embedding at index %d has length %d, expected %d", i, len(v), dim)
+		}
+	}
+	return dim, nil
 }
 
 // DeleteByPath removes all chunks belonging to a file.
@@ -124,9 +163,21 @@ func (s *Store) Query(ctx context.Context, embedding []float32, n int, filters m
 		n = count
 	}
 
+	if s.dim != 0 && len(embedding) != s.dim {
+		return nil, fmt.Errorf("embedding dimension mismatch: query has %d dimensions but the store was indexed with %d dimensions; clear the data directory and restart after changing the embedding model", len(embedding), s.dim)
+	}
+
 	results, err := s.col.QueryEmbedding(ctx, embedding, n, filters, nil)
 	if err != nil {
+		if strings.Contains(err.Error(), "vectors must have the same length") {
+			return nil, fmt.Errorf("embedding dimension mismatch: query vector length differs from stored vectors; clear the data directory and restart after changing the embedding model")
+		}
 		return nil, fmt.Errorf("query: %w", err)
+	}
+
+	if s.dim == 0 && len(results) > 0 {
+		s.dim = len(embedding)
+		_ = s.saveDim()
 	}
 
 	return results, nil
@@ -185,6 +236,33 @@ func (s *Store) saveHashes() error {
 	}
 	if err := os.WriteFile(s.hashFile, data, 0o600); err != nil {
 		return fmt.Errorf("write hash file: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) loadDim() error {
+	data, err := os.ReadFile(s.dimFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read dimension file: %w", err)
+	}
+	var dim int
+	if err := json.Unmarshal(data, &dim); err != nil {
+		return fmt.Errorf("parse dimension file: %w", err)
+	}
+	s.dim = dim
+	return nil
+}
+
+func (s *Store) saveDim() error {
+	data, err := json.Marshal(s.dim)
+	if err != nil {
+		return fmt.Errorf("marshal dimension: %w", err)
+	}
+	if err := os.WriteFile(s.dimFile, data, 0o600); err != nil {
+		return fmt.Errorf("write dimension file: %w", err)
 	}
 	return nil
 }

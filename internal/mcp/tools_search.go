@@ -100,10 +100,10 @@ var errGrepStop = fmt.Errorf("grep stop")
 
 func grepTool() mcp.Tool {
 	return mcp.NewTool("grep",
-		mcp.WithDescription("Search file contents by substring or regex"),
+		mcp.WithDescription("Search file contents by substring or regex. Requires project or path."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Text or regex to search")),
-		mcp.WithString("project", mcp.Description("Project name to restrict the search")),
-		mcp.WithString("path", mcp.Description("Relative path within the project")),
+		mcp.WithString("project", mcp.Description("Project name to restrict the search (required if path is omitted)")),
+		mcp.WithString("path", mcp.Description("Relative path within the project (required if project is omitted)")),
 		mcp.WithBoolean("regex", mcp.Description("Treat query as regex"), mcp.DefaultBool(false)),
 		mcp.WithNumber("top_k", mcp.Description("Maximum number of matches"), mcp.DefaultNumber(20)),
 	)
