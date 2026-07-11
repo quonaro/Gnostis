@@ -42,7 +42,7 @@ func (s *Server) resolvePath(project, path string) (string, error) {
 
 	if path == "" {
 		if base == "" {
-			return "", fmt.Errorf("path or project is required")
+			return "", fmt.Errorf("project or path is required")
 		}
 		path = base
 	} else if base != "" && !filepath.IsAbs(path) {

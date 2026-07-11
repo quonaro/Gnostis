@@ -15,9 +15,10 @@ import (
 )
 
 type listFilesArgs struct {
-	Project string `json:"project"`
-	Path    string `json:"path"`
-	Pattern string `json:"pattern"`
+	Project     string `json:"project"`
+	Path        string `json:"path"`
+	Pattern     string `json:"pattern"`
+	IncludeDirs bool   `json:"include_dirs"`
 }
 
 type directoryTreeArgs struct {
@@ -58,6 +59,18 @@ func (s *Server) listFiles(ctx context.Context, request mcp.CallToolRequest, arg
 	files, err := globFiles(root, args.Pattern)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if !args.IncludeDirs {
+		filtered := make([]string, 0, len(files))
+		for _, f := range files {
+			info, statErr := os.Stat(f)
+			if statErr != nil || info.IsDir() {
+				continue
+			}
+			filtered = append(filtered, f)
+		}
+		files = filtered
 	}
 
 	entries := make([]fileEntry, len(files))
@@ -131,6 +144,7 @@ func listFilesTool() mcp.Tool {
 		mcp.WithString("project", mcp.Description("Project name")),
 		mcp.WithString("path", mcp.Description("Relative path within the project")),
 		mcp.WithString("pattern", mcp.Description("Glob pattern, e.g. *.go"), mcp.DefaultString("*")),
+		mcp.WithBoolean("include_dirs", mcp.Description("Include directories in results"), mcp.DefaultBool(false)),
 	)
 }
 

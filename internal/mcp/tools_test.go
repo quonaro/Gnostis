@@ -195,6 +195,76 @@ func TestListFiles(t *testing.T) {
 	}
 }
 
+func TestListFiles_NoDirsByDefault(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("a"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, []project.Project{{Name: "test", Path: dir}})
+	res, err := srv.listFiles(context.Background(), mcp.CallToolRequest{}, listFilesArgs{Project: "test", Pattern: "*"})
+	if err != nil {
+		t.Fatalf("listFiles: %v", err)
+	}
+	var files []fileEntry
+	if err := json.Unmarshal([]byte(extractText(t, res)), &files); err != nil {
+		t.Fatalf("unmarshal files: %v", err)
+	}
+	if len(files) != 1 || !strings.HasSuffix(files[0].Path, "a.go") {
+		t.Errorf("expected only a.go, got: %+v", files)
+	}
+}
+
+func TestListFiles_IncludeDirs(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("a"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, []project.Project{{Name: "test", Path: dir}})
+	res, err := srv.listFiles(context.Background(), mcp.CallToolRequest{}, listFilesArgs{Project: "test", Pattern: "*", IncludeDirs: true})
+	if err != nil {
+		t.Fatalf("listFiles: %v", err)
+	}
+	var files []fileEntry
+	if err := json.Unmarshal([]byte(extractText(t, res)), &files); err != nil {
+		t.Fatalf("unmarshal files: %v", err)
+	}
+	if len(files) != 2 {
+		t.Errorf("expected 2 entries, got: %+v", files)
+	}
+}
+
+func TestListFiles_MissingProjectAndPath(t *testing.T) {
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, []project.Project{{Name: "test", Path: "/tmp/test"}})
+	res, err := srv.listFiles(context.Background(), mcp.CallToolRequest{}, listFilesArgs{})
+	if err != nil {
+		t.Fatalf("listFiles: %v", err)
+	}
+	if res == nil || !res.IsError {
+		t.Fatalf("expected error result, got %+v", res)
+	}
+	assertTextEquals(t, res, "project or path is required")
+}
+
+func TestGrep_MissingProjectAndPath(t *testing.T) {
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, []project.Project{{Name: "test", Path: "/tmp/test"}})
+	res, err := srv.grep(context.Background(), mcp.CallToolRequest{}, grepArgs{Query: "foo"})
+	if err != nil {
+		t.Fatalf("grep: %v", err)
+	}
+	if res == nil || !res.IsError {
+		t.Fatalf("expected error result, got %+v", res)
+	}
+	assertTextEquals(t, res, "project or path is required")
+}
+
 func TestGrep(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("func Foo() {}\nfunc Bar() {}\n"), 0o600); err != nil {

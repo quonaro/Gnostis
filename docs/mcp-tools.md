@@ -64,6 +64,8 @@ Search file contents by substring or regular expression.
 - `regex` (bool, optional, default false)
 - `top_k` (int, optional, default 20)
 
+At least one of `project` or `path` must be provided.
+
 **Returns:** array of `{path, line, content}` matches.
 
 ## `list_files`
@@ -75,6 +77,9 @@ List files matching a glob pattern.
 - `project` (string, optional)
 - `path` (string, optional, relative path within the project)
 - `pattern` (string, optional, default `*`)
+- `include_dirs` (bool, optional, default false)
+
+At least one of `project` or `path` must be provided. By default only files are returned; set `include_dirs` to true to include directories.
 
 **Returns:** array of `{path}` entries.
 
