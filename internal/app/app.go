@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -38,6 +40,7 @@ type App struct {
 	watcher        *watcher.Watcher
 	mcp            *mcpServer.Server
 	embeddingCache map[string][]float32
+	ProgressWriter io.Writer
 }
 
 // New builds the application from configuration.
@@ -188,7 +191,7 @@ func (a *App) initialIndex(ctx context.Context) error {
 	a.cleanupDeletedFiles(ctx)
 	for i, dir := range a.dirs {
 		slog.InfoContext(ctx, "indexing directory", "path", dir.Path, "project", a.projects[i].Name)
-		if err := indexDirectory(ctx, dir, a.projects[i], a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache); err != nil {
+		if err := indexDirectory(ctx, a.ProgressWriter, dir, a.projects[i], a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache); err != nil {
 			return fmt.Errorf("index %s: %w", dir.Path, err)
 		}
 	}
@@ -226,6 +229,37 @@ func (a *App) Info() (provider, model string, symbols int) {
 // InitialIndex performs the first-time indexing of all configured directories.
 func (a *App) InitialIndex(ctx context.Context) error {
 	return a.initialIndex(ctx)
+}
+
+// RebuildProject removes the existing index for a single project and reindexes it.
+func (a *App) RebuildProject(ctx context.Context, name string) error {
+	for i, p := range a.projects {
+		if p.Name != name {
+			continue
+		}
+
+		slog.InfoContext(ctx, "rebuilding project", "project", p.Name, "path", a.dirs[i].Path)
+
+		for _, path := range a.store.Paths() {
+			if strings.HasPrefix(path, a.dirs[i].Path) {
+				_ = a.store.DeleteByPath(ctx, path)
+				a.symbolIndex.RemoveByPath(path)
+			}
+		}
+
+		if err := indexDirectory(ctx, a.ProgressWriter, a.dirs[i], p, a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache); err != nil {
+			return fmt.Errorf("index %s: %w", a.dirs[i].Path, err)
+		}
+
+		if err := a.symbolIndex.Save(); err != nil {
+			return fmt.Errorf("save symbol index: %w", err)
+		}
+
+		slog.InfoContext(ctx, "project rebuild complete", "project", p.Name, "chunks", a.store.Count())
+		return nil
+	}
+
+	return fmt.Errorf("project %q not found", name)
 }
 
 // ReindexFiles reindexes the given file paths and persists the symbol index.

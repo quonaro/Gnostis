@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -17,16 +18,26 @@ import (
 	"github.com/quonaro/gnostis/internal/project"
 	"github.com/quonaro/gnostis/internal/store"
 	"github.com/quonaro/gnostis/internal/symbol"
+	"github.com/schollz/progressbar/v2"
 )
 
-func indexDirectory(ctx context.Context, dir directory.Directory, proj project.Project, idx *indexer.Indexer, ch *chunker.Chunker, provider embeddings.Provider, st store.VectorStore, sym *symbol.Index, cache map[string][]float32) error {
+func indexDirectory(ctx context.Context, out io.Writer, dir directory.Directory, proj project.Project, idx *indexer.Indexer, ch *chunker.Chunker, provider embeddings.Provider, st store.VectorStore, sym *symbol.Index, cache map[string][]float32) error {
 	files, err := idx.Index(ctx, dir, proj)
 	if err != nil {
 		return fmt.Errorf("walk directory: %w", err)
 	}
 	slog.InfoContext(ctx, "indexed files", "project", proj.Name, "count", len(files))
 
-	changed, err := chunkFilesParallel(ctx, files, ch, st, sym)
+	var bar *progressbar.ProgressBar
+	if out != nil {
+		bar = progressbar.NewOptions(len(files),
+			progressbar.OptionSetWriter(out),
+			progressbar.OptionShowCount(),
+			progressbar.OptionSetDescription(fmt.Sprintf("chunking %s", proj.Name)),
+		)
+	}
+
+	changed, err := chunkFilesParallel(ctx, files, ch, st, sym, bar)
 	if err != nil {
 		return fmt.Errorf("chunk files: %w", err)
 	}
@@ -36,13 +47,26 @@ func indexDirectory(ctx context.Context, dir directory.Directory, proj project.P
 		allChunks = append(allChunks, fc.chunks...)
 	}
 	if len(allChunks) == 0 {
+		if bar != nil {
+			_ = bar.Finish()
+		}
 		slog.InfoContext(ctx, "no chunks to embed", "project", proj.Name)
 		return nil
+	}
+
+	if bar != nil {
+		bar.ChangeMax(len(files) + len(allChunks))
+		bar.Describe(fmt.Sprintf("embedding %s", proj.Name))
 	}
 
 	vectors, err := embedChunks(ctx, provider, allChunks, cache)
 	if err != nil {
 		return fmt.Errorf("embed chunks: %w", err)
+	}
+
+	if bar != nil {
+		_ = bar.Add(len(allChunks))
+		_ = bar.Finish()
 	}
 
 	if err := st.AddChunks(ctx, allChunks, vectors); err != nil {
@@ -57,7 +81,13 @@ type fileChunks struct {
 	chunks []chunker.Chunk
 }
 
-func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunker.Chunker, st store.VectorStore, sym *symbol.Index) ([]fileChunks, error) {
+func progressAdd(bar *progressbar.ProgressBar, n int) {
+	if bar != nil {
+		_ = bar.Add(n)
+	}
+}
+
+func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunker.Chunker, st store.VectorStore, sym *symbol.Index, bar *progressbar.ProgressBar) ([]fileChunks, error) {
 	workers := runtime.NumCPU()
 	if workers < 2 {
 		workers = 2
@@ -71,10 +101,12 @@ func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunk
 		storedHash, err := st.GetFileHash(ctx, f.Path)
 		if err != nil {
 			slog.WarnContext(ctx, "lookup stored hash", "path", f.Path, "error", err)
+			progressAdd(bar, 1)
 			continue
 		}
 		if storedHash == f.Hash {
 			slog.DebugContext(ctx, "skipping unchanged file", "path", f.Path)
+			progressAdd(bar, 1)
 			continue
 		}
 
@@ -83,6 +115,7 @@ func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunk
 		go func(file indexer.FileInfo) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			defer progressAdd(bar, 1)
 
 			chunks, err := ch.ChunkFile(ctx, file)
 			if err != nil {

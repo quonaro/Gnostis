@@ -28,3 +28,23 @@ push:
     else
       git push origin main
     fi
+
+install:
+  depends:
+  - "build"
+  script: |
+    set -euo pipefail
+
+    sudo cp gnostis /usr/local/bin/gnostis
+    echo "==> Installed: /usr/local/bin/gnostis"
+
+    config_dir="$HOME/.gnostis"
+    config_path="$config_dir/config.yaml"
+    mkdir -p "$config_dir"
+
+    if [ -f "$config_path" ]; then
+      echo "==> Config already exists: $config_path (skipped)"
+    else
+      cp config.yaml "$config_path"
+      echo "==> Installed config: $config_path"
+    fi
