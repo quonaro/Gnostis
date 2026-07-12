@@ -19,8 +19,10 @@ import (
 	"github.com/quonaro/gnostis/internal/embeddings"
 	"github.com/quonaro/gnostis/internal/indexer"
 	mcpServer "github.com/quonaro/gnostis/internal/mcp"
+	"github.com/quonaro/gnostis/internal/progress"
 	"github.com/quonaro/gnostis/internal/project"
 	"github.com/quonaro/gnostis/internal/search"
+	"github.com/quonaro/gnostis/internal/stats"
 	"github.com/quonaro/gnostis/internal/store"
 	"github.com/quonaro/gnostis/internal/symbol"
 	"github.com/quonaro/gnostis/internal/watcher"
@@ -40,6 +42,8 @@ type App struct {
 	watcher        *watcher.Watcher
 	mcp            *mcpServer.Server
 	embeddingCache map[string][]float32
+	progress       *progress.Progress
+	indexingStats  *stats.Stats
 	ProgressWriter io.Writer
 }
 
@@ -87,6 +91,8 @@ func New(cfg config.Config) (*App, error) {
 		chunker:        chunker.New(),
 		symbolIndex:    symbolIndex,
 		embeddingCache: embeddingCache,
+		progress:       progress.New(filepath.Join(cfg.DataDir, "indexing-progress.json")),
+		indexingStats:  stats.New(filepath.Join(cfg.DataDir, "project-stats.json")),
 	}
 
 	mcpSrv := mcpServer.New(cfg.MCP.Name, cfg.MCP.Version, engine, symbolIndex, a, projects)
@@ -191,7 +197,10 @@ func (a *App) initialIndex(ctx context.Context) error {
 	a.cleanupDeletedFiles(ctx)
 	for i, dir := range a.dirs {
 		slog.InfoContext(ctx, "indexing directory", "path", dir.Path, "project", a.projects[i].Name)
-		if err := indexDirectory(ctx, a.ProgressWriter, dir, a.projects[i], a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache); err != nil {
+		if err := indexDirectory(ctx, a.ProgressWriter, dir, a.projects[i], a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache, a.progress, a.indexingStats); err != nil {
+			if a.progress != nil {
+				_ = a.progress.Fail(err)
+			}
 			return fmt.Errorf("index %s: %w", dir.Path, err)
 		}
 	}
@@ -200,30 +209,6 @@ func (a *App) initialIndex(ctx context.Context) error {
 	}
 	slog.InfoContext(ctx, "initial index complete", "chunks", a.store.Count())
 	return nil
-}
-
-func (a *App) cleanupDeletedFiles(ctx context.Context) {
-	for _, path := range a.store.Paths() {
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			slog.InfoContext(ctx, "removing deleted file from index", "path", path)
-			_ = a.store.DeleteByPath(ctx, path)
-			a.symbolIndex.RemoveByPath(path)
-		}
-	}
-}
-
-// Status returns the configured project names and current chunk count.
-func (a *App) Status() ([]string, int) {
-	names := make([]string, len(a.projects))
-	for i, p := range a.projects {
-		names[i] = p.Name
-	}
-	return names, a.store.Count()
-}
-
-// Info returns runtime metadata about the active provider and index.
-func (a *App) Info() (provider, model string, symbols int) {
-	return a.provider.ModelName(), a.cfg.Embeddings.Model, a.symbolIndex.Count()
 }
 
 // InitialIndex performs the first-time indexing of all configured directories.
@@ -247,7 +232,7 @@ func (a *App) RebuildProject(ctx context.Context, name string) error {
 			}
 		}
 
-		if err := indexDirectory(ctx, a.ProgressWriter, a.dirs[i], p, a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache); err != nil {
+		if err := indexDirectory(ctx, a.ProgressWriter, a.dirs[i], p, a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache, a.progress, a.indexingStats); err != nil {
 			return fmt.Errorf("index %s: %w", a.dirs[i].Path, err)
 		}
 

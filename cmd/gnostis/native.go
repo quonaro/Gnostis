@@ -16,6 +16,21 @@ import (
 	"github.com/quonaro/gnostis/internal/log"
 )
 
+// loadConfigForCLI loads the configuration while suppressing all slog output.
+// The returned restore function should be deferred to return logging to normal.
+func loadConfigForCLI() (config.Config, func(), error) {
+	old := slog.Default()
+	discard := slog.New(slog.NewTextHandler(io.Discard, nil))
+	slog.SetDefault(discard)
+
+	cfg, err := loadConfig()
+
+	// loadConfig may have reconfigured the default logger, so discard again.
+	slog.SetDefault(discard)
+
+	return cfg, func() { slog.SetDefault(old) }, err
+}
+
 func runHandler(_ context.Context, nctx engine.NativeContext) error {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -23,11 +38,6 @@ func runHandler(_ context.Context, nctx engine.NativeContext) error {
 	}
 
 	return runApp(cfg, nctx.Stdout)
-}
-
-func versionHandler(_ context.Context, nctx engine.NativeContext) error {
-	_, _ = fmt.Fprintln(nctx.Stdout, version)
-	return nil
 }
 
 func loadConfig() (config.Config, error) {

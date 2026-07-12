@@ -15,18 +15,29 @@ import (
 	"github.com/quonaro/gnostis/internal/directory"
 	"github.com/quonaro/gnostis/internal/embeddings"
 	"github.com/quonaro/gnostis/internal/indexer"
+	"github.com/quonaro/gnostis/internal/progress"
 	"github.com/quonaro/gnostis/internal/project"
+	"github.com/quonaro/gnostis/internal/stats"
 	"github.com/quonaro/gnostis/internal/store"
 	"github.com/quonaro/gnostis/internal/symbol"
 	"github.com/schollz/progressbar/v2"
 )
 
-func indexDirectory(ctx context.Context, out io.Writer, dir directory.Directory, proj project.Project, idx *indexer.Indexer, ch *chunker.Chunker, provider embeddings.Provider, st store.VectorStore, sym *symbol.Index, cache map[string][]float32) error {
+func indexDirectory(ctx context.Context, out io.Writer, dir directory.Directory, proj project.Project, idx *indexer.Indexer, ch *chunker.Chunker, provider embeddings.Provider, st store.VectorStore, sym *symbol.Index, cache map[string][]float32, prog *progress.Progress, indexingStats *stats.Stats) error {
+	if prog != nil {
+		_ = prog.Start(proj.Name, 0)
+	}
+
 	files, err := idx.Index(ctx, dir, proj)
 	if err != nil {
 		return fmt.Errorf("walk directory: %w", err)
 	}
 	slog.InfoContext(ctx, "indexed files", "project", proj.Name, "count", len(files))
+
+	if prog != nil {
+		_ = prog.Start(proj.Name, len(files))
+		_ = prog.SetPhase(progress.PhaseChunking)
+	}
 
 	var bar *progressbar.ProgressBar
 	if out != nil {
@@ -37,7 +48,7 @@ func indexDirectory(ctx context.Context, out io.Writer, dir directory.Directory,
 		)
 	}
 
-	changed, err := chunkFilesParallel(ctx, files, ch, st, sym, bar)
+	changed, err := chunkFilesParallel(ctx, files, ch, st, sym, bar, prog)
 	if err != nil {
 		return fmt.Errorf("chunk files: %w", err)
 	}
@@ -50,27 +61,50 @@ func indexDirectory(ctx context.Context, out io.Writer, dir directory.Directory,
 		if bar != nil {
 			_ = bar.Finish()
 		}
+		if prog != nil {
+			_ = prog.Done()
+		}
 		slog.InfoContext(ctx, "no chunks to embed", "project", proj.Name)
 		return nil
 	}
 
+	if prog != nil {
+		_ = prog.SetPhase(progress.PhaseEmbedding)
+		_ = prog.SetTotalChunks(len(allChunks))
+	}
+
 	if bar != nil {
-		bar.ChangeMax(len(files) + len(allChunks))
+		bar.ChangeMax(len(allChunks))
+		_ = bar.Set(0)
 		bar.Describe(fmt.Sprintf("embedding %s", proj.Name))
 	}
 
-	vectors, err := embedChunks(ctx, provider, allChunks, cache)
+	vectors, err := embedChunks(ctx, provider, allChunks, cache, func(done int) {
+		if bar != nil {
+			_ = bar.Add(done)
+		}
+		if prog != nil {
+			_ = prog.AddChunks(done)
+		}
+	})
 	if err != nil {
 		return fmt.Errorf("embed chunks: %w", err)
 	}
 
 	if bar != nil {
-		_ = bar.Add(len(allChunks))
 		_ = bar.Finish()
 	}
 
 	if err := st.AddChunks(ctx, allChunks, vectors); err != nil {
 		return fmt.Errorf("store chunks: %w", err)
+	}
+
+	if indexingStats != nil {
+		_ = indexingStats.Update(proj.Name, len(allChunks))
+	}
+
+	if prog != nil {
+		_ = prog.Done()
 	}
 	slog.InfoContext(ctx, "stored chunks", "project", proj.Name, "count", len(allChunks))
 	return nil
@@ -81,13 +115,16 @@ type fileChunks struct {
 	chunks []chunker.Chunk
 }
 
-func progressAdd(bar *progressbar.ProgressBar, n int) {
+func progressAdd(bar *progressbar.ProgressBar, prog *progress.Progress, n int) {
 	if bar != nil {
 		_ = bar.Add(n)
 	}
+	if prog != nil {
+		_ = prog.AddFiles(n)
+	}
 }
 
-func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunker.Chunker, st store.VectorStore, sym *symbol.Index, bar *progressbar.ProgressBar) ([]fileChunks, error) {
+func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunker.Chunker, st store.VectorStore, sym *symbol.Index, bar *progressbar.ProgressBar, prog *progress.Progress) ([]fileChunks, error) {
 	workers := runtime.NumCPU()
 	if workers < 2 {
 		workers = 2
@@ -101,12 +138,12 @@ func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunk
 		storedHash, err := st.GetFileHash(ctx, f.Path)
 		if err != nil {
 			slog.WarnContext(ctx, "lookup stored hash", "path", f.Path, "error", err)
-			progressAdd(bar, 1)
+			progressAdd(bar, prog, 1)
 			continue
 		}
 		if storedHash == f.Hash {
 			slog.DebugContext(ctx, "skipping unchanged file", "path", f.Path)
-			progressAdd(bar, 1)
+			progressAdd(bar, prog, 1)
 			continue
 		}
 
@@ -115,7 +152,7 @@ func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunk
 		go func(file indexer.FileInfo) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			defer progressAdd(bar, 1)
+			defer progressAdd(bar, prog, 1)
 
 			chunks, err := ch.ChunkFile(ctx, file)
 			if err != nil {
@@ -199,7 +236,7 @@ func reindexFile(ctx context.Context, absPath string, dirs []directory.Directory
 
 		sym.AddChunks(chunksToSymbolChunks(chunks))
 
-		vectors, err := embedChunks(ctx, provider, chunks, cache)
+		vectors, err := embedChunks(ctx, provider, chunks, cache, nil)
 		if err != nil {
 			return fmt.Errorf("embed chunks: %w", err)
 		}
@@ -208,59 +245,4 @@ func reindexFile(ctx context.Context, absPath string, dirs []directory.Directory
 	}
 
 	return nil
-}
-
-func chunksToSymbolChunks(chunks []chunker.Chunk) []symbol.Chunk {
-	out := make([]symbol.Chunk, 0, len(chunks))
-	for _, c := range chunks {
-		out = append(out, symbol.Chunk{
-			ProjectID: c.ProjectID,
-			Path:      c.Path,
-			Language:  c.Language,
-			Symbol:    c.Symbol,
-			Signature: c.Signature,
-			StartLine: c.StartLine,
-			EndLine:   c.EndLine,
-		})
-	}
-	return out
-}
-
-func embedChunks(ctx context.Context, provider embeddings.Provider, chunks []chunker.Chunk, cache map[string][]float32) ([][]float32, error) {
-	results := make([][]float32, len(chunks))
-	var missingIndices []int
-	var missingTexts []string
-
-	for i, c := range chunks {
-		if cache == nil {
-			missingIndices = append(missingIndices, i)
-			missingTexts = append(missingTexts, c.Content)
-			continue
-		}
-		if v, ok := cache[c.ID]; ok {
-			results[i] = v
-			continue
-		}
-		missingIndices = append(missingIndices, i)
-		missingTexts = append(missingTexts, c.Content)
-	}
-
-	if len(missingTexts) > 0 {
-		slog.DebugContext(ctx, "embedding chunks", "count", len(missingTexts), "cached", len(chunks)-len(missingTexts), "model", provider.ModelName())
-		vectors, err := provider.Embed(ctx, missingTexts)
-		if err != nil {
-			return nil, fmt.Errorf("embed: %w", err)
-		}
-		if len(vectors) != len(missingTexts) {
-			return nil, fmt.Errorf("expected %d embeddings, got %d", len(missingTexts), len(vectors))
-		}
-		for j, idx := range missingIndices {
-			results[idx] = vectors[j]
-			if cache != nil {
-				cache[chunks[idx].ID] = vectors[j]
-			}
-		}
-	}
-
-	return results, nil
 }

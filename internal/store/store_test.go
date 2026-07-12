@@ -150,6 +150,49 @@ func TestStore_Query_DimensionMismatch(t *testing.T) {
 	}
 }
 
+func TestStore_CountByProject(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	s, err := New(ctx, dir)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	chunks := []chunker.Chunk{
+		{ID: "c1", ProjectID: "alpha", Path: "/tmp/a.go", FileHash: "h1", Content: "package a"},
+		{ID: "c2", ProjectID: "alpha", Path: "/tmp/b.go", FileHash: "h2", Content: "package b"},
+		{ID: "c3", ProjectID: "beta", Path: "/tmp/c.go", FileHash: "h3", Content: "package c"},
+	}
+	if err := s.AddChunks(ctx, chunks, [][]float32{{0.1, 0.2}, {0.2, 0.3}, {0.3, 0.4}}); err != nil {
+		t.Fatalf("add chunks: %v", err)
+	}
+
+	alpha, err := s.CountByProject(ctx, "alpha")
+	if err != nil {
+		t.Fatalf("count alpha: %v", err)
+	}
+	if alpha != 2 {
+		t.Fatalf("expected alpha count 2, got %d", alpha)
+	}
+
+	beta, err := s.CountByProject(ctx, "beta")
+	if err != nil {
+		t.Fatalf("count beta: %v", err)
+	}
+	if beta != 1 {
+		t.Fatalf("expected beta count 1, got %d", beta)
+	}
+
+	gamma, err := s.CountByProject(ctx, "gamma")
+	if err != nil {
+		t.Fatalf("count gamma: %v", err)
+	}
+	if gamma != 0 {
+		t.Fatalf("expected gamma count 0, got %d", gamma)
+	}
+}
+
 func TestStore_DimPersistence(t *testing.T) {
 	dir := t.TempDir()
 	ctx := context.Background()

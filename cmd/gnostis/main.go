@@ -13,9 +13,6 @@ import (
 	"github.com/quonaro/gnostis/internal/log"
 )
 
-// version is injected at build time via -ldflags "-X main.version=<hash>".
-var version string
-
 //go:embed cli.yml
 var cliYAML []byte
 
@@ -40,12 +37,11 @@ func main() {
 
 	builder := engine.NewBuilder("gnostis", cliYAML)
 	builder.RegisterNative("run", runHandler)
-	builder.RegisterNative("version", versionHandler)
-	builder.RegisterNative("index.rebuild", indexRebuildHandler)
-	builder.RegisterNative("index.status", indexStatusHandler)
-	builder.RegisterNative("config.validate", configValidateHandler)
-	builder.RegisterNative("config.show", configShowHandler)
-	builder.RegisterNative("config.discover", configDiscoverHandler)
+	builder.RegisterNative("status", indexStatusHandler)
+	builder.RegisterNative("rebuild", indexRebuildHandler)
+	builder.RegisterNative("validate", configValidateHandler)
+	builder.RegisterNative("show", configShowHandler)
+	builder.RegisterNative("discover", configDiscoverHandler)
 
 	app, err := builder.Build()
 	if err != nil {

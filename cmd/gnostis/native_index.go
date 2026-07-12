@@ -4,19 +4,25 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
+	"os/exec"
+	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/mattn/go-isatty"
 	"github.com/quonaro/lota/engine"
 
 	"github.com/quonaro/gnostis/internal/app"
+	"github.com/quonaro/gnostis/internal/progress"
+	"github.com/quonaro/gnostis/internal/stats"
 )
 
-func indexStatusHandler(_ context.Context, nctx engine.NativeContext) error {
-	cfg, err := loadConfig()
+func indexStatusHandler(ctx context.Context, nctx engine.NativeContext) error {
+	cfg, restore, err := loadConfigForCLI()
 	if err != nil {
 		return err
 	}
+	defer restore()
 
 	application, err := app.New(cfg)
 	if err != nil {
@@ -27,22 +33,100 @@ func indexStatusHandler(_ context.Context, nctx engine.NativeContext) error {
 	provider, model, symbols := application.Info()
 	_, _ = fmt.Fprintf(nctx.Stdout, "provider: %s\n", provider)
 	_, _ = fmt.Fprintf(nctx.Stdout, "model: %s\n", model)
-	_, _ = fmt.Fprintf(nctx.Stdout, "projects: %s\n", strings.Join(names, ", "))
 	_, _ = fmt.Fprintf(nctx.Stdout, "chunks: %d\n", count)
 	_, _ = fmt.Fprintf(nctx.Stdout, "symbols: %d\n", symbols)
+
+	p, err := application.ProgressState()
+	if err != nil {
+		return fmt.Errorf("load progress: %w", err)
+	}
+
+	switch p.Status {
+	case progress.StatusRunning:
+		_, _ = fmt.Fprintf(nctx.Stdout, "rebuild: running\n")
+		_, _ = fmt.Fprintf(nctx.Stdout, "phase: %s project %q\n", p.Phase, p.Project)
+		_, _ = fmt.Fprintf(nctx.Stdout, "files: %d/%d\n", p.DoneFiles, p.TotalFiles)
+		_, _ = fmt.Fprintf(nctx.Stdout, "chunks: %d/%d\n", p.DoneChunks, p.TotalChunks)
+	case progress.StatusError:
+		_, _ = fmt.Fprintf(nctx.Stdout, "rebuild: error: %s\n", p.Error)
+	case progress.StatusDone:
+		_, _ = fmt.Fprintf(nctx.Stdout, "rebuild: done\n")
+	default:
+		_, _ = fmt.Fprintf(nctx.Stdout, "rebuild: idle\n")
+	}
+
+	projectStats, err := application.ProjectStats(ctx)
+	if err != nil {
+		return fmt.Errorf("load project stats: %w", err)
+	}
+
+	overallLast := latestIndexed(projectStats)
+	if overallLast.IsZero() && !p.UpdatedAt.IsZero() {
+		overallLast = p.UpdatedAt
+	}
+	if !overallLast.IsZero() {
+		_, _ = fmt.Fprintf(nctx.Stdout, "last indexed: %s\n", overallLast.Format(time.RFC3339))
+	}
+
+	_, _ = fmt.Fprintln(nctx.Stdout, "\nprojects:")
+	for _, name := range names {
+		stat := projectStats[name]
+		last := "never"
+		if !stat.LastIndexedAt.IsZero() {
+			last = stat.LastIndexedAt.Format(time.RFC3339)
+		}
+		_, _ = fmt.Fprintf(nctx.Stdout, "  %s: chunks=%d last_indexed=%s\n", name, stat.Chunks, last)
+	}
 	return nil
 }
 
+func latestIndexed(projectStats map[string]stats.Project) time.Time {
+	var latest time.Time
+	for _, s := range projectStats {
+		if s.LastIndexedAt.After(latest) {
+			latest = s.LastIndexedAt
+		}
+	}
+	return latest
+}
+
 func indexRebuildHandler(_ context.Context, nctx engine.NativeContext) error {
-	cfg, err := loadConfig()
+	cfg, restore, err := loadConfigForCLI()
 	if err != nil {
 		return err
 	}
+	defer restore()
 
 	project := nctx.Args["project"]
+	detach := nctx.Args["detach"] == "true"
+
+	if detach {
+		running, err := isRebuildRunning(cfg.DataDir)
+		if err != nil {
+			return err
+		}
+		if running {
+			return fmt.Errorf("a rebuild is already running; check status with 'gnostis status'")
+		}
+		pid, err := spawnDetachedRebuild(cfg.DataDir, project)
+		if err != nil {
+			return fmt.Errorf("spawn detached rebuild: %w", err)
+		}
+		_, _ = fmt.Fprintf(nctx.Stdout, "rebuild started in background (pid: %d)\n", pid)
+		_, _ = fmt.Fprintf(nctx.Stdout, "log: %s\n", filepath.Join(cfg.DataDir, "rebuild.log"))
+		return nil
+	}
+
+	running, err := isRebuildRunning(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	if running {
+		return fmt.Errorf("a rebuild is already running; use -d to run in background or check status with 'gnostis status'")
+	}
 
 	if project == "" {
-		if !confirm(nctx.Stdout, "This will delete the existing index and rebuild it. Continue?") {
+		if isInteractive() && !confirm(nctx.Stdout, "This will delete the existing index and rebuild it. Continue?") {
 			_, _ = fmt.Fprintln(nctx.Stdout, "cancelled")
 			return nil
 		}
@@ -62,6 +146,7 @@ func indexRebuildHandler(_ context.Context, nctx engine.NativeContext) error {
 
 	if project == "" {
 		if err := application.InitialIndex(context.Background()); err != nil {
+			application.FailProgress(err)
 			return fmt.Errorf("rebuild index: %w", err)
 		}
 
@@ -69,15 +154,59 @@ func indexRebuildHandler(_ context.Context, nctx engine.NativeContext) error {
 		return nil
 	}
 
-	if !confirm(nctx.Stdout, fmt.Sprintf("This will delete and rebuild the index for project %q. Continue?", project)) {
+	if isInteractive() && !confirm(nctx.Stdout, fmt.Sprintf("This will delete and rebuild the index for project %q. Continue?", project)) {
 		_, _ = fmt.Fprintln(nctx.Stdout, "cancelled")
 		return nil
 	}
 
 	if err := application.RebuildProject(context.Background(), project); err != nil {
+		application.FailProgress(err)
 		return fmt.Errorf("rebuild project: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(nctx.Stdout, "project %q rebuilt\n", project)
 	return nil
+}
+
+func isInteractive() bool {
+	return isatty.IsTerminal(os.Stdin.Fd())
+}
+
+func isRebuildRunning(dataDir string) (bool, error) {
+	p := progress.New(filepath.Join(dataDir, "indexing-progress.json"))
+	s, err := p.Load()
+	if err != nil {
+		return false, fmt.Errorf("load progress: %w", err)
+	}
+	return s.Status == progress.StatusRunning, nil
+}
+
+func spawnDetachedRebuild(dataDir, project string) (int, error) {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return 0, fmt.Errorf("create data dir: %w", err)
+	}
+
+	logPath := filepath.Join(dataDir, "rebuild.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return 0, fmt.Errorf("open log file: %w", err)
+	}
+	defer func() { _ = logFile.Close() }()
+
+	args := []string{"rebuild"}
+	if project != "" {
+		args = append(args, project)
+	}
+
+	cmd := exec.Command(os.Args[0], args...)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	cmd.Stdin = nil
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+
+	if err := cmd.Start(); err != nil {
+		return 0, fmt.Errorf("start detached process: %w", err)
+	}
+
+	return cmd.Process.Pid, nil
 }

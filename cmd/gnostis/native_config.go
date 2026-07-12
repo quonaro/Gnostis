@@ -14,19 +14,22 @@ import (
 )
 
 func configValidateHandler(_ context.Context, nctx engine.NativeContext) error {
-	_, err := loadConfig()
+	_, restore, err := loadConfigForCLI()
 	if err != nil {
 		return err
 	}
+	defer restore()
+
 	_, _ = fmt.Fprintln(nctx.Stdout, "Configuration is valid")
 	return nil
 }
 
 func configShowHandler(_ context.Context, nctx engine.NativeContext) error {
-	cfg, err := loadConfig()
+	cfg, restore, err := loadConfigForCLI()
 	if err != nil {
 		return err
 	}
+	defer restore()
 
 	cfg.Embeddings.APIKey = maskValue(cfg.Embeddings.APIKey)
 
@@ -40,10 +43,11 @@ func configShowHandler(_ context.Context, nctx engine.NativeContext) error {
 }
 
 func configDiscoverHandler(_ context.Context, nctx engine.NativeContext) error {
-	cfg, err := loadConfig()
+	cfg, restore, err := loadConfigForCLI()
 	if err != nil {
 		return err
 	}
+	defer restore()
 
 	root := nctx.Args["path"]
 	if root == "" {

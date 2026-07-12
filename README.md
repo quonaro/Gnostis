@@ -25,11 +25,10 @@ Gnostis embeds the Lota task runner. Run `gnostis` without arguments to see help
 
 ```bash
 gnostis run                        # start the server (old default behavior)
-gnostis version                    # show build version
-gnostis index status               # list projects and chunk count
-gnostis index rebuild              # delete the index and rebuild it
-gnostis config validate            # validate config.yaml
-gnostis config show                # print config with secrets masked
-gnostis config discover /path      # add first-level directories as projects
-gnostis config discover /path --git --backup  # only git repos, with backup
+gnostis status                     # list projects and chunk count
+gnostis rebuild                    # delete the index and rebuild it
+gnostis validate                   # validate config.yaml
+gnostis show                       # print config with secrets masked
+gnostis discover /path             # add first-level directories as projects
+gnostis discover /path --git --backup  # only git repos, with backup
 ```

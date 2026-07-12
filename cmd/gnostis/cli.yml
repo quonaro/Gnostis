@@ -2,40 +2,32 @@ run:
   desc: Start the Gnostis server
   native: true
 
-version:
-  desc: Show version
+status:
+  desc: Show index status
   native: true
 
-index:
-  desc: Index management commands
-  color: cyan
-  inherit_color: true
-  rebuild:
-    desc: Rebuild the full index or a specific project
-    native: true
-    args:
-    - "project:str?"
-  status:
-    desc: Show index status
-    native: true
+rebuild:
+  desc: Rebuild the full index or a specific project
+  native: true
+  args:
+  - "project:str?"
+  - "detach|d:bool=false"
 
-config:
-  desc: Configuration commands
-  color: blue
-  inherit_color: true
-  validate:
-    desc: Validate config without starting the server
-    native: true
-  show:
-    desc: Show interpolated config with secrets masked
-    native: true
-  discover:
-    desc: Discover projects under a directory and add them to config
-    native: true
-    args:
-    - "path:str"
-    - "git:bool=false"
-    - "go:bool=false"
-    - "nm:bool=false"
-    - "venv:bool=false"
-    - "backup:bool=false"
+validate:
+  desc: Validate config without starting the server
+  native: true
+
+show:
+  desc: Show interpolated config with secrets masked
+  native: true
+
+discover:
+  desc: Discover projects under a directory and add them to config
+  native: true
+  args:
+  - "path:str"
+  - "git:bool=false"
+  - "go:bool=false"
+  - "nm:bool=false"
+  - "venv:bool=false"
+  - "backup:bool=false"

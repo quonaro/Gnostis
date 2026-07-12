@@ -110,11 +110,11 @@ List of indexing roots. Each entry supports:
 
 ## Discovering projects
 
-The `gnostis config discover <path>` command scans `<path>` and proposes adding every first-level subdirectory as a project.
+The `gnostis discover <path>` command scans `<path>` and proposes adding every first-level subdirectory as a project.
 
 ```bash
-gnostis config discover /home/user/CascadeProjects/my
-gnostis config discover /home/user/CascadeProjects/my --git --backup
+gnostis discover /home/user/CascadeProjects/my
+gnostis discover /home/user/CascadeProjects/my --git --backup
 ```
 
 Flags:

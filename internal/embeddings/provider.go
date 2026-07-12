@@ -12,6 +12,7 @@ import (
 // Provider converts texts into embedding vectors.
 type Provider interface {
 	Embed(ctx context.Context, texts []string) ([][]float32, error)
+	BatchSize() int
 	ModelName() string
 }
 

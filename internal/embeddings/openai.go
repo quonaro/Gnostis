@@ -47,6 +47,10 @@ func (p *openAICompatible) ModelName() string {
 	return p.model
 }
 
+func (p *openAICompatible) BatchSize() int {
+	return p.batchSize
+}
+
 func (p *openAICompatible) Embed(ctx context.Context, texts []string) ([][]float32, error) {
 	batches := (len(texts) + p.batchSize - 1) / p.batchSize
 	if batches < 1 {

@@ -29,6 +29,7 @@ type VectorStore interface {
 	GetFileHash(ctx context.Context, path string) (string, error)
 	Paths() []string
 	Count() int
+	CountByProject(ctx context.Context, projectID string) (int, error)
 }
 
 // Store persists chunks in chromem-go and tracks file hashes for incremental indexing.
@@ -186,6 +187,26 @@ func (s *Store) Query(ctx context.Context, embedding []float32, n int, filters m
 // Count returns the number of stored chunks.
 func (s *Store) Count() int {
 	return s.col.Count()
+}
+
+// CountByProject returns the number of chunks belonging to the given project.
+func (s *Store) CountByProject(ctx context.Context, projectID string) (int, error) {
+	if projectID == "" {
+		return 0, nil
+	}
+	if s.dim == 0 || s.col.Count() == 0 {
+		return 0, nil
+	}
+
+	// Use a normalized basis vector so every filtered document is returned.
+	query := make([]float32, s.dim)
+	query[0] = 1
+
+	results, err := s.col.QueryEmbedding(ctx, query, s.col.Count(), map[string]string{"project_id": projectID}, nil)
+	if err != nil {
+		return 0, fmt.Errorf("query project %q: %w", projectID, err)
+	}
+	return len(results), nil
 }
 
 func chunkMetadata(ch chunker.Chunk) map[string]string {

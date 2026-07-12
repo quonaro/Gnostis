@@ -20,6 +20,7 @@ import (
 
 const (
 	defaultHiddenSize = 384
+	defaultBatchSize  = 32
 
 	inputIDsName      = "input_ids"
 	attentionMaskName = "attention_mask"
@@ -97,6 +98,11 @@ func (p *Provider) Close() error {
 // ModelName returns the provider model identifier.
 func (p *Provider) ModelName() string {
 	return p.modelName
+}
+
+// BatchSize returns the number of texts processed in a single inference call.
+func (p *Provider) BatchSize() int {
+	return defaultBatchSize
 }
 
 // Embed converts a batch of texts into embedding vectors.
