@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,22 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/mark3labs/mcp-go/mcp"
+)
+
+// Human-readable error reason codes used by toolError.
+const (
+	errReasonInvalidArgument  = "invalid_argument"
+	errReasonProjectNotFound  = "project_not_found"
+	errReasonPathNotAllowed   = "path_not_allowed"
+	errReasonPathNotFound     = "path_not_found"
+	errReasonNotConfigured    = "not_configured"
+	errReasonNotFound         = "not_found"
+	errReasonReadFailed       = "read_failed"
+	errReasonInvalidRegex     = "invalid_regex"
+	errReasonSearchFailed     = "search_failed"
+	errReasonMemoryNotEnabled = "memory_not_enabled"
+	errReasonIndexNotReady    = "index_not_ready"
 )
 
 func (s *Server) isPathAllowed(path string) bool {
@@ -109,4 +126,36 @@ func isTextFile(path string) bool {
 		return false
 	}
 	return !strings.Contains(string(buf[:n]), "\x00")
+}
+
+// toolErrorResponse is the JSON body returned by toolError.
+type toolErrorResponse struct {
+	Error      bool   `json:"error"`
+	Reason     string `json:"reason"`
+	Message    string `json:"message"`
+	Suggestion string `json:"suggestion,omitempty"`
+}
+
+// toolError returns a structured, human-readable MCP error result.
+func toolError(reason, message, suggestion string) *mcp.CallToolResult {
+	data, _ := json.Marshal(toolErrorResponse{
+		Error:      true,
+		Reason:     reason,
+		Message:    message,
+		Suggestion: suggestion,
+	})
+	return mcp.NewToolResultError(string(data))
+}
+
+// toolErrorFromResolvePath maps a resolvePath error to a structured error.
+func toolErrorFromResolvePath(err error) *mcp.CallToolResult {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "project") && strings.Contains(msg, "not found"):
+		return toolError(errReasonProjectNotFound, msg, "use mcp2_list_projects to see available projects")
+	case strings.Contains(msg, "outside indexed projects"):
+		return toolError(errReasonPathNotAllowed, msg, "use fs_* tools for non-project paths or add the project to the index")
+	default:
+		return toolError(errReasonInvalidArgument, msg, "provide a valid project name or absolute path")
+	}
 }

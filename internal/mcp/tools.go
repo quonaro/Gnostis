@@ -53,7 +53,7 @@ type searchResultItem struct {
 func (s *Server) searchCodebase(ctx context.Context, request mcp.CallToolRequest, args searchCodebaseArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "search_codebase", "query", args.Query, "project", args.Project, "path", args.Path, "language", args.Language)
 	if args.Query == "" {
-		return mcp.NewToolResultError("query is required"), nil
+		return toolError(errReasonInvalidArgument, "query is required", "provide a non-empty search query"), nil
 	}
 
 	filters := map[string]string{}
@@ -67,7 +67,7 @@ func (s *Server) searchCodebase(ctx context.Context, request mcp.CallToolRequest
 	if args.Path != "" {
 		prefix, err := s.resolvePath(args.Project, args.Path)
 		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			return toolErrorFromResolvePath(err), nil
 		}
 		filters["path"] = prefix
 	}
@@ -80,7 +80,7 @@ func (s *Server) searchCodebase(ctx context.Context, request mcp.CallToolRequest
 	results, err := s.engine.Search(ctx, args.Query, filters, topK)
 	if err != nil {
 		slog.ErrorContext(ctx, "search_codebase failed", "query", args.Query, "error", err)
-		return nil, fmt.Errorf("search: %w", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later or check the index status"), nil
 	}
 	slog.DebugContext(ctx, "search_codebase results", "count", len(results))
 
@@ -113,7 +113,7 @@ func (s *Server) searchCodebase(ctx context.Context, request mcp.CallToolRequest
 func (s *Server) findSymbol(ctx context.Context, request mcp.CallToolRequest, args findSymbolArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "find_symbol", "name", args.Name, "project", args.Project, "language", args.Language)
 	if args.Name == "" {
-		return mcp.NewToolResultError("name is required"), nil
+		return toolError(errReasonInvalidArgument, "name is required", "provide a symbol name to find"), nil
 	}
 
 	var matched []symbol.Location
@@ -130,7 +130,7 @@ func (s *Server) findSymbol(ctx context.Context, request mcp.CallToolRequest, ar
 	if len(matched) == 0 {
 		items, err := s.findSymbolSemantic(ctx, args)
 		if err != nil {
-			return nil, err
+			return toolError(errReasonSearchFailed, err.Error(), "try again later or check the index status"), nil
 		}
 		matched = items
 	}
@@ -142,7 +142,7 @@ func (s *Server) findSymbol(ctx context.Context, request mcp.CallToolRequest, ar
 
 	data, err := json.Marshal(items)
 	if err != nil {
-		return nil, fmt.Errorf("marshal results: %w", err)
+		return toolError(errReasonSearchFailed, err.Error(), "internal error marshalling results"), nil
 	}
 
 	return mcp.NewToolResultText(string(data)), nil
@@ -220,18 +220,21 @@ func searchResultToSymbolLocation(r search.Result) symbol.Location {
 func (s *Server) getFileContext(ctx context.Context, request mcp.CallToolRequest, args getFileContextArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "get_file_context", "path", args.Path, "start_line", args.StartLine, "end_line", args.EndLine)
 	if args.Path == "" {
-		return mcp.NewToolResultError("path is required"), nil
+		return toolError(errReasonInvalidArgument, "path is required", "provide an absolute file path"), nil
 	}
 
 	clean, err := s.resolvePath("", args.Path)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolErrorFromResolvePath(err), nil
 	}
 
 	content, err := os.ReadFile(clean)
 	if err != nil {
 		slog.ErrorContext(ctx, "get_file_context failed", "path", clean, "error", err)
-		return mcp.NewToolResultError(fmt.Sprintf("read file: %v", err)), nil
+		if os.IsNotExist(err) {
+			return toolError(errReasonPathNotFound, fmt.Sprintf("file not found: %s", clean), "check the path or use fs_read for non-project files"), nil
+		}
+		return toolError(errReasonReadFailed, fmt.Sprintf("read file: %v", err), "check file permissions"), nil
 	}
 
 	lines := strings.Split(string(content), "\n")
@@ -246,7 +249,7 @@ func (s *Server) getFileContext(ctx context.Context, request mcp.CallToolRequest
 	}
 
 	if start > end {
-		return mcp.NewToolResultError("start_line must be <= end_line"), nil
+		return toolError(errReasonInvalidArgument, "start_line must be <= end_line", "adjust line range"), nil
 	}
 
 	out := strings.Join(lines[start-1:end], "\n")
@@ -269,7 +272,7 @@ func (s *Server) listProjects(ctx context.Context, request mcp.CallToolRequest, 
 
 	data, err := json.Marshal(items)
 	if err != nil {
-		return nil, fmt.Errorf("marshal projects: %w", err)
+		return toolError(errReasonSearchFailed, err.Error(), "internal error marshalling project list"), nil
 	}
 
 	return mcp.NewToolResultText(string(data)), nil

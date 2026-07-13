@@ -37,7 +37,7 @@ func getIndexStatusTool() mcp.Tool {
 func (s *Server) getIndexStatus(ctx context.Context, request mcp.CallToolRequest, args getIndexStatusArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "get_index_status")
 	if s.indexer == nil {
-		return mcp.NewToolResultError("indexer is not configured"), nil
+		return toolError(errReasonNotConfigured, "indexer is not configured", "check the Gnostis configuration"), nil
 	}
 
 	projects, chunks := s.indexer.Status()
@@ -45,12 +45,14 @@ func (s *Server) getIndexStatus(ctx context.Context, request mcp.CallToolRequest
 
 	pstate, err := s.indexer.ProgressState()
 	if err != nil {
-		return nil, fmt.Errorf("load progress: %w", err)
+		slog.ErrorContext(ctx, "get_index_status failed", "error", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later"), nil
 	}
 
 	pst, err := s.indexer.ProjectStats(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("load project stats: %w", err)
+		slog.ErrorContext(ctx, "get_index_status failed", "error", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later"), nil
 	}
 
 	eta := pstate.ETA()
@@ -70,7 +72,7 @@ func (s *Server) getIndexStatus(ctx context.Context, request mcp.CallToolRequest
 
 	data, err := json.Marshal(result)
 	if err != nil {
-		return nil, fmt.Errorf("marshal status: %w", err)
+		return toolError(errReasonSearchFailed, err.Error(), "internal error marshalling status"), nil
 	}
 	return mcp.NewToolResultText(string(data)), nil
 }
@@ -89,23 +91,24 @@ func getIndexJobTool() mcp.Tool {
 func (s *Server) getIndexJob(ctx context.Context, request mcp.CallToolRequest, args getIndexJobArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "get_index_job", "job_id", args.JobID)
 	if s.indexer == nil {
-		return mcp.NewToolResultError("indexer is not configured"), nil
+		return toolError(errReasonNotConfigured, "indexer is not configured", "check the Gnostis configuration"), nil
 	}
 	if args.JobID == "" {
-		return mcp.NewToolResultError("job_id is required"), nil
+		return toolError(errReasonInvalidArgument, "job_id is required", "provide the job_id returned by rebuild_project/rebuild_index"), nil
 	}
 
 	pstate, err := s.indexer.ProgressState()
 	if err != nil {
-		return nil, fmt.Errorf("load progress: %w", err)
+		slog.ErrorContext(ctx, "get_index_job failed", "error", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later"), nil
 	}
 	if pstate.JobID != args.JobID {
-		return mcp.NewToolResultError(fmt.Sprintf("job %q not found", args.JobID)), nil
+		return toolError(errReasonNotFound, fmt.Sprintf("job %q not found", args.JobID), "use get_index_status to see the current job"), nil
 	}
 
 	data, err := json.Marshal(pstate)
 	if err != nil {
-		return nil, fmt.Errorf("marshal job state: %w", err)
+		return toolError(errReasonSearchFailed, err.Error(), "internal error marshalling job state"), nil
 	}
 	return mcp.NewToolResultText(string(data)), nil
 }
@@ -124,15 +127,16 @@ func rebuildProjectTool() mcp.Tool {
 func (s *Server) rebuildProject(ctx context.Context, request mcp.CallToolRequest, args rebuildProjectArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "rebuild_project", "project", args.Project)
 	if s.indexer == nil {
-		return mcp.NewToolResultError("indexer is not configured"), nil
+		return toolError(errReasonNotConfigured, "indexer is not configured", "check the Gnostis configuration"), nil
 	}
 	if args.Project == "" {
-		return mcp.NewToolResultError("project is required"), nil
+		return toolError(errReasonInvalidArgument, "project is required", "provide a project name from list_projects"), nil
 	}
 
 	jobID, err := s.indexer.StartRebuildProject(ctx, args.Project)
 	if err != nil {
-		return nil, fmt.Errorf("start rebuild project: %w", err)
+		slog.ErrorContext(ctx, "rebuild_project failed", "project", args.Project, "error", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later or check the project name"), nil
 	}
 
 	return mcp.NewToolResultText(fmt.Sprintf(`{"job_id":%q}`, jobID)), nil
@@ -149,12 +153,13 @@ func rebuildIndexTool() mcp.Tool {
 func (s *Server) rebuildIndex(ctx context.Context, request mcp.CallToolRequest, args rebuildIndexArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "rebuild_index")
 	if s.indexer == nil {
-		return mcp.NewToolResultError("indexer is not configured"), nil
+		return toolError(errReasonNotConfigured, "indexer is not configured", "check the Gnostis configuration"), nil
 	}
 
 	jobID, err := s.indexer.StartRebuildIndex(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("start rebuild index: %w", err)
+		slog.ErrorContext(ctx, "rebuild_index failed", "error", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later"), nil
 	}
 
 	return mcp.NewToolResultText(fmt.Sprintf(`{"job_id":%q}`, jobID)), nil
@@ -186,18 +191,24 @@ func discoverProjectsTool() mcp.Tool {
 func (s *Server) discoverProjects(ctx context.Context, request mcp.CallToolRequest, args discoverProjectsArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "discover_projects", "path", args.Path)
 	if s.indexer == nil {
-		return mcp.NewToolResultError("indexer is not configured"), nil
+		return toolError(errReasonNotConfigured, "indexer is not configured", "check the Gnostis configuration"), nil
 	}
 	if args.Path == "" {
-		return mcp.NewToolResultError("path is required"), nil
+		return toolError(errReasonInvalidArgument, "path is required", "provide an absolute directory path"), nil
 	}
 
 	root, err := s.resolveAbsolutePath(args.Path)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolError(errReasonInvalidArgument, err.Error(), "provide an absolute directory path"), nil
 	}
 	if info, err := os.Stat(root); err != nil || !info.IsDir() {
-		return mcp.NewToolResultError(fmt.Sprintf("%s is not a directory", root)), nil
+		if err != nil {
+			if os.IsNotExist(err) {
+				return toolError(errReasonPathNotFound, fmt.Sprintf("path not found: %s", root), "check the directory path"), nil
+			}
+			return toolError(errReasonReadFailed, err.Error(), "check permissions"), nil
+		}
+		return toolError(errReasonInvalidArgument, fmt.Sprintf("%s is not a directory", root), "provide a directory path"), nil
 	}
 
 	opts := discover.Options{
@@ -210,12 +221,13 @@ func (s *Server) discoverProjects(ctx context.Context, request mcp.CallToolReque
 	}
 	result, err := s.indexer.DiscoverProjects(ctx, root, opts)
 	if err != nil {
-		return nil, fmt.Errorf("discover projects: %w", err)
+		slog.ErrorContext(ctx, "discover_projects failed", "root", root, "error", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later"), nil
 	}
 
 	data, err := json.Marshal(result)
 	if err != nil {
-		return nil, fmt.Errorf("marshal discover result: %w", err)
+		return toolError(errReasonSearchFailed, err.Error(), "internal error marshalling discover result"), nil
 	}
 	return mcp.NewToolResultText(string(data)), nil
 }
@@ -236,14 +248,15 @@ func addProjectTool() mcp.Tool {
 func (s *Server) addProject(ctx context.Context, request mcp.CallToolRequest, args addProjectArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "add_project", "path", args.Path, "name", args.Name)
 	if s.indexer == nil {
-		return mcp.NewToolResultError("indexer is not configured"), nil
+		return toolError(errReasonNotConfigured, "indexer is not configured", "check the Gnostis configuration"), nil
 	}
 	if args.Path == "" {
-		return mcp.NewToolResultError("path is required"), nil
+		return toolError(errReasonInvalidArgument, "path is required", "provide an absolute directory path"), nil
 	}
 
 	if err := s.indexer.AddProject(ctx, args.Path, args.Name); err != nil {
-		return nil, fmt.Errorf("add project: %w", err)
+		slog.ErrorContext(ctx, "add_project failed", "path", args.Path, "error", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later or check the path"), nil
 	}
 	return mcp.NewToolResultText(`{"added":true}`), nil
 }
@@ -264,17 +277,18 @@ func removeProjectTool() mcp.Tool {
 func (s *Server) removeProject(ctx context.Context, request mcp.CallToolRequest, args removeProjectArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "remove_project", "name", args.Name)
 	if s.indexer == nil {
-		return mcp.NewToolResultError("indexer is not configured"), nil
+		return toolError(errReasonNotConfigured, "indexer is not configured", "check the Gnostis configuration"), nil
 	}
 	if args.Name == "" {
-		return mcp.NewToolResultError("name is required"), nil
+		return toolError(errReasonInvalidArgument, "name is required", "provide a project name from list_projects"), nil
 	}
 	if !args.Confirm {
-		return mcp.NewToolResultError("confirm must be true to remove"), nil
+		return toolError(errReasonInvalidArgument, "confirm must be true to remove", "set confirm to true to remove the project"), nil
 	}
 
 	if err := s.indexer.RemoveProject(ctx, args.Name); err != nil {
-		return nil, fmt.Errorf("remove project: %w", err)
+		slog.ErrorContext(ctx, "remove_project failed", "name", args.Name, "error", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later or check the project name"), nil
 	}
 	return mcp.NewToolResultText(`{"removed":true}`), nil
 }

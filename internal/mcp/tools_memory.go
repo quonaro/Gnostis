@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -43,10 +41,10 @@ func (s *Server) memorySearch(ctx context.Context, _ mcp.CallToolRequest, args m
 	slog.InfoContext(ctx, "mcp tool call", "tool", "memory_search", "query", args.Query)
 
 	if strings.TrimSpace(args.Query) == "" {
-		return mcp.NewToolResultError("query is required"), nil
+		return toolError(errReasonInvalidArgument, "query is required", "provide a non-empty search query"), nil
 	}
 	if s.memoryManager == nil {
-		return mcp.NewToolResultError("memory is not enabled"), nil
+		return toolError(errReasonMemoryNotEnabled, "memory is not enabled", "enable a memory provider in the Gnostis configuration or run `lota service install`"), nil
 	}
 
 	providerID := args.Provider
@@ -56,10 +54,11 @@ func (s *Server) memorySearch(ctx context.Context, _ mcp.CallToolRequest, args m
 
 	vectors, err := s.memoryManager.Provider().Embed(ctx, []string{args.Query})
 	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
+		slog.ErrorContext(ctx, "memory_search failed", "error", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later"), nil
 	}
 	if len(vectors) == 0 {
-		return nil, fmt.Errorf("empty query embedding")
+		return toolError(errReasonSearchFailed, "empty query embedding", "try again with a different query"), nil
 	}
 
 	topK := args.TopK
@@ -70,7 +69,8 @@ func (s *Server) memorySearch(ctx context.Context, _ mcp.CallToolRequest, args m
 	filters := map[string]string{"project_id": "memory-" + providerID}
 	raw, err := s.memoryManager.Store().Query(ctx, vectors[0], topK*2, filters)
 	if err != nil {
-		return nil, fmt.Errorf("query memory store: %w", err)
+		slog.ErrorContext(ctx, "memory_search failed", "error", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later"), nil
 	}
 
 	results := make([]memorySearchResult, 0, len(raw))
@@ -111,7 +111,7 @@ func (s *Server) memorySearch(ctx context.Context, _ mcp.CallToolRequest, args m
 
 	data, err := json.Marshal(results)
 	if err != nil {
-		return nil, fmt.Errorf("marshal memory search results: %w", err)
+		return toolError(errReasonSearchFailed, err.Error(), "internal error marshalling memory search results"), nil
 	}
 	return mcp.NewToolResultText(string(data)), nil
 }
@@ -141,13 +141,13 @@ func (s *Server) memoryWrite(ctx context.Context, _ mcp.CallToolRequest, args me
 	slog.InfoContext(ctx, "mcp tool call", "tool", "memory_write", "title", args.Title)
 
 	if strings.TrimSpace(args.Title) == "" {
-		return mcp.NewToolResultError("title is required"), nil
+		return toolError(errReasonInvalidArgument, "title is required", "provide a non-empty title for the note"), nil
 	}
 	if strings.TrimSpace(args.Content) == "" {
-		return mcp.NewToolResultError("content is required"), nil
+		return toolError(errReasonInvalidArgument, "content is required", "provide non-empty note content"), nil
 	}
 	if s.memoryManager == nil {
-		return mcp.NewToolResultError("memory is not enabled"), nil
+		return toolError(errReasonMemoryNotEnabled, "memory is not enabled", "enable a memory provider in the Gnostis configuration or run `lota service install`"), nil
 	}
 
 	providerID := args.Provider
@@ -157,153 +157,14 @@ func (s *Server) memoryWrite(ctx context.Context, _ mcp.CallToolRequest, args me
 
 	path, err := s.memoryManager.WriteNote(ctx, args.Title, args.Content, args.Tags, providerID)
 	if err != nil {
-		return nil, fmt.Errorf("write memory note: %w", err)
+		slog.ErrorContext(ctx, "memory_write failed", "error", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later"), nil
 	}
 
 	res := memoryWriteResult{Path: path}
 	data, err := json.Marshal(res)
 	if err != nil {
-		return nil, fmt.Errorf("marshal memory write result: %w", err)
+		return toolError(errReasonSearchFailed, err.Error(), "internal error marshalling memory write result"), nil
 	}
 	return mcp.NewToolResultText(string(data)), nil
-}
-
-type memoryListArgs struct {
-	Provider string `json:"provider,omitempty"`
-}
-
-type memoryListResult struct {
-	Path     string `json:"path"`
-	Provider string `json:"provider"`
-}
-
-func memoryListTool() mcp.Tool {
-	return mcp.NewTool("memory_list",
-		mcp.WithDescription("List indexed memory files."),
-		mcp.WithString("provider", mcp.Description("Memory provider to filter by, e.g. cascade or cursor")),
-	)
-}
-
-func (s *Server) memoryList(ctx context.Context, _ mcp.CallToolRequest, args memoryListArgs) (*mcp.CallToolResult, error) {
-	slog.InfoContext(ctx, "mcp tool call", "tool", "memory_list")
-
-	if s.memoryManager == nil {
-		return mcp.NewToolResultError("memory is not enabled"), nil
-	}
-
-	dataDir := s.memoryManager.DataDir()
-	entries, err := os.ReadDir(dataDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return mcp.NewToolResultText("[]"), nil
-		}
-		return nil, fmt.Errorf("read memory dir: %w", err)
-	}
-
-	providerFilter := args.Provider
-	if providerFilter == "" {
-		providerFilter = defaultMemoryProvider
-	}
-
-	var results []memoryListResult
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
-			continue
-		}
-		path := filepath.Join(dataDir, entry.Name())
-		content, err := os.ReadFile(path)
-		if err != nil {
-			slog.WarnContext(ctx, "read memory file", "path", path, "error", err)
-			continue
-		}
-		provider := extractProvider(string(content))
-		if providerFilter != "" && provider != providerFilter {
-			continue
-		}
-		results = append(results, memoryListResult{Path: path, Provider: provider})
-	}
-
-	data, err := json.Marshal(results)
-	if err != nil {
-		return nil, fmt.Errorf("marshal memory list: %w", err)
-	}
-	return mcp.NewToolResultText(string(data)), nil
-}
-
-type memoryReadArgs struct {
-	Path string `json:"path"`
-}
-
-func memoryReadTool() mcp.Tool {
-	return mcp.NewTool("memory_read",
-		mcp.WithDescription("Read a specific memory Markdown file."),
-		mcp.WithString("path", mcp.Required(), mcp.Description("Absolute path to the memory file")),
-	)
-}
-
-func (s *Server) memoryRead(ctx context.Context, _ mcp.CallToolRequest, args memoryReadArgs) (*mcp.CallToolResult, error) {
-	slog.InfoContext(ctx, "mcp tool call", "tool", "memory_read", "path", args.Path)
-
-	if strings.TrimSpace(args.Path) == "" {
-		return mcp.NewToolResultError("path is required"), nil
-	}
-	if s.memoryManager == nil {
-		return mcp.NewToolResultError("memory is not enabled"), nil
-	}
-
-	clean := filepath.Clean(args.Path)
-	if !strings.HasPrefix(clean, s.memoryManager.DataDir()) {
-		return mcp.NewToolResultError("path is outside memory directory"), nil
-	}
-
-	content, err := os.ReadFile(clean)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return mcp.NewToolResultError("file not found"), nil
-		}
-		return nil, fmt.Errorf("read memory file: %w", err)
-	}
-
-	return mcp.NewToolResultText(string(content)), nil
-}
-
-type rebuildMemoryResult struct {
-	Chunks int `json:"chunks"`
-}
-
-func rebuildMemoryTool() mcp.Tool {
-	return mcp.NewTool("rebuild_memory",
-		mcp.WithDescription("Clear and rebuild the memory (dialogue/note) index."),
-	)
-}
-
-func (s *Server) rebuildMemory(ctx context.Context, _ mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, error) {
-	slog.InfoContext(ctx, "mcp tool call", "tool", "rebuild_memory")
-
-	if s.memoryManager == nil {
-		return mcp.NewToolResultError("memory is not enabled"), nil
-	}
-
-	if err := s.memoryManager.Rebuild(ctx); err != nil {
-		return nil, fmt.Errorf("rebuild memory: %w", err)
-	}
-
-	res := rebuildMemoryResult{Chunks: s.memoryManager.Store().Count()}
-	data, err := json.Marshal(res)
-	if err != nil {
-		return nil, fmt.Errorf("marshal rebuild memory result: %w", err)
-	}
-	return mcp.NewToolResultText(string(data)), nil
-}
-
-func extractProvider(content string) string {
-	for _, line := range strings.Split(content, "\n") {
-		if strings.HasPrefix(line, "- **Provider:**") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				return strings.TrimSpace(strings.ReplaceAll(parts[1], "**", ""))
-			}
-		}
-	}
-	return defaultMemoryProvider
 }

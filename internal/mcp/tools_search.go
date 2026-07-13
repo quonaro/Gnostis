@@ -36,12 +36,12 @@ type grepMatch struct {
 func (s *Server) grep(ctx context.Context, request mcp.CallToolRequest, args grepArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "grep", "query", args.Query, "project", args.Project, "path", args.Path)
 	if args.Query == "" {
-		return mcp.NewToolResultError("query is required"), nil
+		return toolError(errReasonInvalidArgument, "query is required", "provide a non-empty search query"), nil
 	}
 
 	root, err := s.resolvePath(args.Project, args.Path)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolErrorFromResolvePath(err), nil
 	}
 
 	topK := int(args.TopK)
@@ -53,7 +53,7 @@ func (s *Server) grep(ctx context.Context, request mcp.CallToolRequest, args gre
 	if args.Regex {
 		re, err = regexp.Compile(args.Query)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("invalid regex: %v", err)), nil
+			return toolError(errReasonInvalidRegex, fmt.Sprintf("invalid regex: %v", err), "fix the regular expression"), nil
 		}
 	}
 
@@ -91,7 +91,7 @@ func (s *Server) grep(ctx context.Context, request mcp.CallToolRequest, args gre
 
 	data, err := json.Marshal(matches)
 	if err != nil {
-		return nil, fmt.Errorf("marshal matches: %w", err)
+		return toolError(errReasonSearchFailed, err.Error(), "internal error marshalling matches"), nil
 	}
 	return mcp.NewToolResultText(string(data)), nil
 }
@@ -121,7 +121,7 @@ func queryDocumentationTool() mcp.Tool {
 func (s *Server) queryDocumentation(ctx context.Context, request mcp.CallToolRequest, args queryDocumentationArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "query_documentation", "query", args.Query, "project", args.Project)
 	if args.Query == "" {
-		return mcp.NewToolResultError("query is required"), nil
+		return toolError(errReasonInvalidArgument, "query is required", "provide a non-empty search query"), nil
 	}
 
 	filters := map[string]string{"language": "markdown"}
@@ -136,7 +136,8 @@ func (s *Server) queryDocumentation(ctx context.Context, request mcp.CallToolReq
 
 	results, err := s.engine.Search(ctx, args.Query, filters, topK)
 	if err != nil {
-		return nil, fmt.Errorf("search documentation: %w", err)
+		slog.ErrorContext(ctx, "query_documentation failed", "query", args.Query, "error", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later or check the index status"), nil
 	}
 
 	items := make([]searchResultItem, len(results))
@@ -157,7 +158,7 @@ func (s *Server) queryDocumentation(ctx context.Context, request mcp.CallToolReq
 
 	data, err := json.Marshal(items)
 	if err != nil {
-		return nil, fmt.Errorf("marshal results: %w", err)
+		return toolError(errReasonSearchFailed, err.Error(), "internal error marshalling results"), nil
 	}
 	return mcp.NewToolResultText(string(data)), nil
 }

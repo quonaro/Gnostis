@@ -162,8 +162,12 @@ func TestReindexFiles_IndexerError(t *testing.T) {
 
 	mock := &mockIndexer{err: errors.New("boom")}
 	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil, []project.Project{{Name: "test", Path: dir}})
-	_, err := srv.reindexFiles(context.Background(), mcp.CallToolRequest{}, reindexFilesArgs{Paths: []string{path}})
-	if err == nil {
-		t.Fatal("expected error from indexer")
+	res, err := srv.reindexFiles(context.Background(), mcp.CallToolRequest{}, reindexFilesArgs{Paths: []string{path}})
+	if err != nil {
+		t.Fatalf("unexpected internal error: %v", err)
 	}
+	if !res.IsError {
+		t.Fatal("expected error result from indexer")
+	}
+	assertTextEquals(t, res, "boom")
 }

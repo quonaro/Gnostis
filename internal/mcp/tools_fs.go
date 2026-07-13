@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -53,12 +52,12 @@ func (s *Server) listFiles(ctx context.Context, request mcp.CallToolRequest, arg
 
 	root, err := s.resolvePath(args.Project, args.Path)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolErrorFromResolvePath(err), nil
 	}
 
 	files, err := globFiles(root, args.Pattern)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolError(errReasonInvalidArgument, err.Error(), "check the glob pattern"), nil
 	}
 
 	if !args.IncludeDirs {
@@ -80,7 +79,7 @@ func (s *Server) listFiles(ctx context.Context, request mcp.CallToolRequest, arg
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return nil, fmt.Errorf("marshal files: %w", err)
+		return toolError(errReasonSearchFailed, err.Error(), "internal error marshalling file list"), nil
 	}
 	return mcp.NewToolResultText(string(data)), nil
 }
@@ -90,7 +89,7 @@ func (s *Server) directoryTree(ctx context.Context, request mcp.CallToolRequest,
 
 	root, err := s.resolvePath(args.Project, args.Path)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolErrorFromResolvePath(err), nil
 	}
 
 	depth := int(args.Depth)
@@ -100,12 +99,13 @@ func (s *Server) directoryTree(ctx context.Context, request mcp.CallToolRequest,
 
 	tree, err := buildTree(root, depth)
 	if err != nil {
-		return nil, fmt.Errorf("build tree: %w", err)
+		slog.ErrorContext(ctx, "directory_tree failed", "root", root, "error", err)
+		return toolError(errReasonReadFailed, err.Error(), "check the path and permissions"), nil
 	}
 
 	data, err := json.Marshal(tree)
 	if err != nil {
-		return nil, fmt.Errorf("marshal tree: %w", err)
+		return toolError(errReasonSearchFailed, err.Error(), "internal error marshalling tree"), nil
 	}
 	return mcp.NewToolResultText(string(data)), nil
 }
@@ -171,7 +171,7 @@ func (s *Server) getRecentChanges(ctx context.Context, request mcp.CallToolReque
 
 	root, err := s.resolvePath(args.Project, args.Path)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolErrorFromResolvePath(err), nil
 	}
 
 	minutes := int(args.Minutes)
@@ -196,12 +196,13 @@ func (s *Server) getRecentChanges(ctx context.Context, request mcp.CallToolReque
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("walk recent changes: %w", err)
+		slog.ErrorContext(ctx, "get_recent_changes failed", "root", root, "error", err)
+		return toolError(errReasonReadFailed, err.Error(), "check the path and permissions"), nil
 	}
 
 	data, err := json.Marshal(changes)
 	if err != nil {
-		return nil, fmt.Errorf("marshal changes: %w", err)
+		return toolError(errReasonSearchFailed, err.Error(), "internal error marshalling changes"), nil
 	}
 	return mcp.NewToolResultText(string(data)), nil
 }

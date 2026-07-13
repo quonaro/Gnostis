@@ -396,8 +396,8 @@ func TestGetFileContext_OutsideProject(t *testing.T) {
 func assertTextEquals(t *testing.T, res *mcp.CallToolResult, want string) {
 	t.Helper()
 	got := extractText(t, res)
-	if got != want {
-		t.Errorf("result text = %q, want %q", got, want)
+	if !strings.Contains(got, want) {
+		t.Errorf("result text = %q, want substring %q", got, want)
 	}
 }
 
