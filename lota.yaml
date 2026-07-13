@@ -29,35 +29,15 @@ push:
       git push origin main
     fi
 
-install:
-  depends:
-  - "build"
-  script: |
-    set -euo pipefail
-
-    bin_dir="$HOME/.local/bin"
-    bin_path="$bin_dir/gnostis"
-    config_dir="$HOME/.gnostis"
-    config_path="$config_dir/config.yaml"
-    unit_dir="$HOME/.config/systemd/user"
-    unit_path="$unit_dir/gnostis.service"
-
-    mkdir -p "$bin_dir" "$config_dir" "$unit_dir"
-
-    cp gnostis "$bin_path"
-    chmod +x "$bin_path"
-    echo "==> Installed: $bin_path"
-
-    if [ -f "$config_path" ]; then
-      echo "==> Config already exists: $config_path (skipped)"
-    else
-      cp config.yaml "$config_path"
-      echo "==> Installed config: $config_path"
-    fi
-
-    cp systemd/gnostis.service "$unit_path"
-    echo "==> Installed systemd unit: $unit_path"
-
-    systemctl --user daemon-reload
-    systemctl --user enable --now gnostis
-    echo "==> Gnostis service started and enabled"
+service:
+  install:
+    depends:
+    - "build"
+    script: |
+      systemctl --user stop gnostis && ./gnostis install && systemctl --user start gnostis
+  stop:
+    script: |
+      systemctl --user stop gnostis
+  start:
+    script: |
+      systemctl --user start gnostis

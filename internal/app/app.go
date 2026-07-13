@@ -211,6 +211,12 @@ func (a *App) runHTTP(ctx context.Context) error {
 }
 
 func (a *App) initialIndex(ctx context.Context) error {
+	if state, err := a.progress.Load(); err != nil {
+		slog.ErrorContext(ctx, "load progress", "error", err)
+	} else if state.Status == progress.StatusRunning {
+		return a.resumeInterruptedJob(ctx, state)
+	}
+
 	a.cleanupDeletedFiles(ctx)
 	for i, dir := range a.dirs {
 		slog.InfoContext(ctx, "indexing directory", "path", dir.Path, "project", a.projects[i].Name)

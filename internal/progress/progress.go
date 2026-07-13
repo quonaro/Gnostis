@@ -73,6 +73,9 @@ func (p *Progress) Load() (State, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return State{}, fmt.Errorf("decode progress file: %w", err)
 	}
+	if s.JobID != "" {
+		p.jobID = s.JobID
+	}
 	p.state = s
 	if p.jobID != "" {
 		p.state.JobID = p.jobID

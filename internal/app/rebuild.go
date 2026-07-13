@@ -11,6 +11,7 @@ import (
 
 	"github.com/quonaro/gnostis/internal/config"
 	"github.com/quonaro/gnostis/internal/directory"
+	"github.com/quonaro/gnostis/internal/progress"
 	"github.com/quonaro/gnostis/internal/project"
 )
 
@@ -89,14 +90,18 @@ func (a *App) StartRebuildIndex(ctx context.Context) (string, error) {
 }
 
 func (a *App) startJob(ctx context.Context, prefix string, fn func(context.Context) error) (string, error) {
+	id := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	return a.startJobWithID(ctx, id, fn)
+}
+
+func (a *App) startJobWithID(ctx context.Context, id string, fn func(context.Context) error) (string, error) {
 	a.jobMu.Lock()
 	if a.jobRunning {
-		id := a.currentJobID
+		existingID := a.currentJobID
 		a.jobMu.Unlock()
-		return id, nil
+		return existingID, nil
 	}
 
-	id := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 	a.jobRunning = true
 	a.currentJobID = id
 	a.progress.SetJobID(id)
@@ -111,15 +116,54 @@ func (a *App) startJob(ctx context.Context, prefix string, fn func(context.Conte
 			a.jobMu.Unlock()
 		}()
 
-		if err := fn(ctx); err != nil {
+		jobCtx := context.WithoutCancel(ctx)
+		if err := fn(jobCtx); err != nil {
 			_ = a.progress.Fail(err)
-			slog.ErrorContext(ctx, "job failed", "job_id", id, "error", err)
+			slog.ErrorContext(jobCtx, "job failed", "job_id", id, "error", err)
 			return
 		}
-		slog.InfoContext(ctx, "job completed", "job_id", id)
+		slog.InfoContext(jobCtx, "job completed", "job_id", id)
 	}()
 
 	return id, nil
+}
+
+// resumeInterruptedJob restarts a rebuild that was in progress when the
+// previous process exited. It expects progress.Status to be Running.
+func (a *App) resumeInterruptedJob(ctx context.Context, state progress.State) error {
+	slog.InfoContext(ctx, "resuming interrupted rebuild", "job_id", state.JobID, "project", state.Project)
+
+	prefix := jobPrefix(state.JobID)
+	switch {
+	case strings.HasPrefix(prefix, "project:"):
+		name := strings.TrimPrefix(prefix, "project:")
+		if name == "" {
+			_ = a.progress.Fail(fmt.Errorf("interrupted by restart: empty project name"))
+			return nil
+		}
+		_, err := a.startJobWithID(ctx, state.JobID, func(jobCtx context.Context) error {
+			return a.RebuildProject(jobCtx, name)
+		})
+		return err
+	case prefix == "index":
+		_, err := a.startJobWithID(ctx, state.JobID, func(jobCtx context.Context) error {
+			return a.RebuildIndex(jobCtx)
+		})
+		return err
+	default:
+		slog.WarnContext(ctx, "unknown running job, marking as failed", "job_id", state.JobID)
+		_ = a.progress.Fail(fmt.Errorf("interrupted by restart: unknown job type"))
+		return nil
+	}
+}
+
+// jobPrefix extracts the logical prefix from a job ID such as
+// "project:RuobrOld-1783920062303548722" or "index-1783920062303548722".
+func jobPrefix(id string) string {
+	if idx := strings.LastIndex(id, "-"); idx > 0 {
+		return id[:idx]
+	}
+	return id
 }
 
 // deleteChunksByPrefix removes all indexed chunks whose path is under prefix.

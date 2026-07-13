@@ -78,3 +78,28 @@ func TestProgressLoadMissing(t *testing.T) {
 		t.Fatalf("expected status %q, got %q", StatusIdle, s.Status)
 	}
 }
+
+func TestProgressLoadPreservesJobID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "progress.json")
+	if err := os.WriteFile(path, []byte(`{"job_id":"project:RuobrOld-123","status":"running","project":"RuobrOld"}`), 0o644); err != nil {
+		t.Fatalf("write progress file: %v", err)
+	}
+
+	p := New(path)
+	s, err := p.Load()
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+	if s.JobID != "project:RuobrOld-123" {
+		t.Fatalf("expected job id %q, got %q", "project:RuobrOld-123", s.JobID)
+	}
+
+	if err := p.Start("RuobrOld", 100); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	s, _ = p.Load()
+	if s.JobID != "project:RuobrOld-123" {
+		t.Fatalf("expected resumed job id %q, got %q", "project:RuobrOld-123", s.JobID)
+	}
+}
