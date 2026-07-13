@@ -14,6 +14,7 @@ import (
 	"github.com/quonaro/lota/engine"
 
 	"github.com/quonaro/gnostis/internal/app"
+	"github.com/quonaro/gnostis/internal/lock"
 	"github.com/quonaro/gnostis/internal/progress"
 	"github.com/quonaro/gnostis/internal/stats"
 )
@@ -36,6 +37,7 @@ func indexStatusHandler(ctx context.Context, nctx engine.NativeContext) error {
 	_, _ = fmt.Fprintf(nctx.Stdout, "model: %s\n", model)
 	_, _ = fmt.Fprintf(nctx.Stdout, "chunks: %d\n", count)
 	_, _ = fmt.Fprintf(nctx.Stdout, "symbols: %d\n", symbols)
+	_, _ = fmt.Fprintf(nctx.Stdout, "daemon: %s\n", systemdStatus())
 
 	p, err := application.ProgressState()
 	if err != nil {
@@ -126,6 +128,16 @@ func indexRebuildHandler(_ context.Context, nctx engine.NativeContext) error {
 		return fmt.Errorf("a rebuild is already running; use -d to run in background or check status with 'gnostis status'")
 	}
 
+	if !detach {
+		systemdStop()
+	}
+
+	dataLock := lock.New(filepath.Dir(cfg.DataDir))
+	if err := dataLock.TryLock(); err != nil {
+		return fmt.Errorf("cannot rebuild while another gnostis instance is running: %w", err)
+	}
+	defer func() { _ = dataLock.Unlock() }()
+
 	if len(paths) == 0 {
 		if isInteractive() && !confirm(nctx.Stdout, "This will delete the existing index and rebuild it. Continue?") {
 			_, _ = fmt.Fprintln(nctx.Stdout, "cancelled")
@@ -152,6 +164,9 @@ func indexRebuildHandler(_ context.Context, nctx engine.NativeContext) error {
 		}
 
 		_, _ = fmt.Fprintln(nctx.Stdout, "index rebuilt")
+		if !detach {
+			systemdStart()
+		}
 		return nil
 	}
 
@@ -160,6 +175,9 @@ func indexRebuildHandler(_ context.Context, nctx engine.NativeContext) error {
 	}
 
 	_, _ = fmt.Fprintf(nctx.Stdout, "rebuilt %d path(s)\n", len(paths))
+	if !detach {
+		systemdStart()
+	}
 	return nil
 }
 
@@ -218,4 +236,29 @@ func spawnDetachedRebuild(dataDir string, paths ...string) (int, error) {
 	}
 
 	return cmd.Process.Pid, nil
+}
+
+func systemdStatus() string {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return "unknown"
+	}
+	out, err := exec.Command("systemctl", "--user", "is-active", "gnostis").Output()
+	if err != nil {
+		return "inactive"
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func systemdStop() {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return
+	}
+	_ = exec.Command("systemctl", "--user", "stop", "gnostis").Run()
+}
+
+func systemdStart() {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return
+	}
+	_ = exec.Command("systemctl", "--user", "start", "gnostis").Run()
 }

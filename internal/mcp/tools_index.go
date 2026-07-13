@@ -45,6 +45,10 @@ func (s *Server) reindexFiles(ctx context.Context, request mcp.CallToolRequest, 
 			return mcp.NewToolResultError(fmt.Sprintf("stat %s: %v", clean, err)), nil
 		}
 
+		if !s.isPathAllowed(clean) {
+			return mcp.NewToolResultError(fmt.Sprintf("path %s is outside indexed projects", clean)), nil
+		}
+
 		cleanPaths = append(cleanPaths, clean)
 	}
 

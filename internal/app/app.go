@@ -18,6 +18,7 @@ import (
 	"github.com/quonaro/gnostis/internal/directory"
 	"github.com/quonaro/gnostis/internal/embeddings"
 	"github.com/quonaro/gnostis/internal/indexer"
+	"github.com/quonaro/gnostis/internal/lock"
 	mcpServer "github.com/quonaro/gnostis/internal/mcp"
 	"github.com/quonaro/gnostis/internal/progress"
 	"github.com/quonaro/gnostis/internal/project"
@@ -44,6 +45,7 @@ type App struct {
 	embeddingCache map[string][]float32
 	progress       *progress.Progress
 	indexingStats  *stats.Stats
+	lock           *lock.Lock
 	ProgressWriter io.Writer
 }
 
@@ -93,13 +95,14 @@ func New(cfg config.Config) (*App, error) {
 		embeddingCache: embeddingCache,
 		progress:       progress.New(filepath.Join(cfg.DataDir, "indexing-progress.json")),
 		indexingStats:  stats.New(filepath.Join(cfg.DataDir, "project-stats.json")),
+		lock:           lock.New(filepath.Dir(cfg.DataDir)),
 	}
 
 	mcpSrv := mcpServer.New(cfg.MCP.Name, cfg.MCP.Version, engine, symbolIndex, a, projects)
 	a.mcp = mcpSrv
 
 	w := watcher.New(dirs, func(path string) {
-		if err := reindexFile(context.Background(), path, dirs, projects, a.cfg, a.store, a.symbolIndex, a.provider, a.embeddingCache); err != nil {
+		if err := reindexFile(context.Background(), path, dirs, projects, a.cfg, a.store, a.symbolIndex, a.provider, a.embeddingCache, a.indexingStats); err != nil {
 			slog.Error("reindex file", "path", path, "error", err)
 			return
 		}
@@ -112,10 +115,15 @@ func New(cfg config.Config) (*App, error) {
 	return a, nil
 }
 
-// Run serves MCP immediately while performing initial indexing and starting the
-// watcher in the background. The first component error stops the app.
+// Run serves the MCP HTTP server while performing initial indexing and starting
+// the watcher in the background. The first component error stops the app.
 func (a *App) Run(ctx context.Context) error {
 	slog.InfoContext(ctx, "starting app")
+	if err := a.lock.TryLock(); err != nil {
+		return fmt.Errorf("acquire lock: %w", err)
+	}
+	defer func() { _ = a.lock.Unlock() }()
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -125,15 +133,8 @@ func (a *App) Run(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slog.InfoContext(ctx, "serving mcp", "name", a.cfg.MCP.Name, "version", a.cfg.MCP.Version, "transport", a.cfg.MCP.Transport)
-		var err error
-		switch a.cfg.MCP.Transport {
-		case "streamable-http":
-			err = a.runHTTP(ctx)
-		default:
-			err = a.mcp.Start(ctx)
-		}
-		if err != nil {
+		slog.InfoContext(ctx, "serving mcp http", "name", a.cfg.MCP.Name, "version", a.cfg.MCP.Version, "address", a.cfg.MCP.Address)
+		if err := a.runHTTP(ctx); err != nil {
 			errCh <- err
 		}
 		cancel()
@@ -173,7 +174,7 @@ func (a *App) runHTTP(ctx context.Context) error {
 	defer signal.Stop(sigChan)
 
 	go func() {
-		if err := a.mcp.StartHTTP(ctx, a.cfg.MCP.Address); err != nil {
+		if err := a.mcp.StartHTTP(ctx, a.cfg.MCP.Address, a.cfg.MCP.Token); err != nil {
 			slog.ErrorContext(ctx, "mcp http server stopped", "error", err)
 			cancel()
 		}
@@ -286,7 +287,7 @@ func (a *App) rebuildDirectory(ctx context.Context, dirPath string) error {
 	dir := directory.FromConfig(a.cfg.Index, config.Directory{Path: dirPath, Name: filepath.Base(dirPath)})
 	proj := project.New(filepath.Base(dirPath), dirPath)
 
-	if err := indexDirectory(ctx, a.ProgressWriter, dir, proj, a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache, nil, nil); err != nil {
+	if err := indexDirectory(ctx, a.ProgressWriter, dir, proj, a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache, nil, a.indexingStats); err != nil {
 		return fmt.Errorf("index directory: %w", err)
 	}
 
@@ -299,7 +300,7 @@ func (a *App) rebuildFile(ctx context.Context, filePath string) error {
 	_ = a.store.DeleteByPath(ctx, filePath)
 	a.symbolIndex.RemoveByPath(filePath)
 
-	if err := reindexFile(ctx, filePath, a.dirs, a.projects, a.cfg, a.store, a.symbolIndex, a.provider, a.embeddingCache); err != nil {
+	if err := reindexFile(ctx, filePath, a.dirs, a.projects, a.cfg, a.store, a.symbolIndex, a.provider, a.embeddingCache, a.indexingStats); err != nil {
 		return fmt.Errorf("reindex file: %w", err)
 	}
 	return nil

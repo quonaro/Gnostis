@@ -90,7 +90,7 @@ func configDiscoverHandler(_ context.Context, nctx engine.NativeContext) error {
 		return nil
 	}
 
-	cfgPath, err := config.ResolvePath(os.Getenv("GNOSTIS_CONFIG"))
+	cfgPath, err := config.ResolvePath("")
 	if err != nil {
 		return fmt.Errorf("resolve config path: %w", err)
 	}

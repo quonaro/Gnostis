@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpServer "github.com/mark3labs/mcp-go/server"
@@ -63,23 +65,37 @@ func New(name, version string, engine Searcher, symbols Finder, reindexer Reinde
 	return s
 }
 
-// Start runs the stdio MCP server until the process exits.
-func (s *Server) Start(ctx context.Context) error {
-	slog.InfoContext(ctx, "starting mcp server", "name", s.name, "version", s.version)
-	if err := mcpServer.ServeStdio(s.server); err != nil {
-		return fmt.Errorf("serve stdio: %w", err)
-	}
-	return nil
-}
-
 // StartHTTP runs the MCP server over Streamable HTTP on the given address.
-func (s *Server) StartHTTP(ctx context.Context, addr string) error {
+// If token is non-empty, the Authorization header must be "Bearer <token>".
+func (s *Server) StartHTTP(ctx context.Context, addr, token string) error {
 	slog.InfoContext(ctx, "starting mcp streamable http server", "name", s.name, "version", s.version, "address", addr)
-	s.http = mcpServer.NewStreamableHTTPServer(s.server)
+
+	// The handler forwards requests to the StreamableHTTPServer once it is created.
+	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.http.ServeHTTP(w, r)
+	})
+	if token != "" {
+		handler = bearerTokenHandler(handler, token)
+	}
+
+	httpServer := &http.Server{Addr: addr, Handler: handler}
+	s.http = mcpServer.NewStreamableHTTPServer(s.server, mcpServer.WithStreamableHTTPServer(httpServer))
 	if err := s.http.Start(addr); err != nil {
 		return fmt.Errorf("serve streamable http: %w", err)
 	}
 	return nil
+}
+
+func bearerTokenHandler(next http.Handler, token string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		const prefix = "Bearer "
+		if !strings.HasPrefix(auth, prefix) || auth[len(prefix):] != token {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // StopHTTP gracefully shuts down the Streamable HTTP server.

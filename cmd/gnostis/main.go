@@ -5,8 +5,10 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/quonaro/lota/engine"
 
@@ -15,6 +17,13 @@ import (
 
 //go:embed cli.yml
 var cliYAML []byte
+
+// version is set by the build linker to the short git commit hash.
+var version string
+
+// logOutput is the current shared log destination; it is set to both stderr and
+// ~/.gnostis/gnostis.log when the binary starts.
+var logOutput io.Writer = os.Stderr
 
 func parseLogLevel(level string) (slog.Level, error) {
 	switch level {
@@ -31,8 +40,26 @@ func parseLogLevel(level string) (slog.Level, error) {
 	}
 }
 
+func setupLogOutput() io.Writer {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return os.Stderr
+	}
+	dir := filepath.Join(home, ".gnostis")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return os.Stderr
+	}
+	path := filepath.Join(dir, "gnostis.log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return os.Stderr
+	}
+	return io.MultiWriter(os.Stderr, f)
+}
+
 func main() {
-	logger := slog.New(log.NewHandler(os.Stderr, slog.LevelInfo))
+	logOutput = setupLogOutput()
+	logger := slog.New(log.NewHandler(logOutput, slog.LevelInfo))
 	slog.SetDefault(logger)
 
 	builder := engine.NewBuilder("gnostis", cliYAML)

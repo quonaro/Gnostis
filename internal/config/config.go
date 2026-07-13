@@ -39,10 +39,10 @@ type Directory struct {
 
 // MCP configures the Model Context Protocol server.
 type MCP struct {
-	Name      string `yaml:"name"`
-	Version   string `yaml:"version"`
-	Transport string `yaml:"transport"`
-	Address   string `yaml:"address"`
+	Name    string `yaml:"name"`
+	Version string `yaml:"version"`
+	Address string `yaml:"address"`
+	Token   string `yaml:"token"`
 }
 
 const (
@@ -55,8 +55,7 @@ const (
 	defaultONNXModel    = "sentence-transformers/all-MiniLM-L6-v2"
 	defaultBatchSize    = 32
 	defaultServerName   = "gnostis"
-	defaultVersion      = "0.1.0"
-	defaultTransport    = "stdio"
-	defaultAddress      = ":8080"
+	defaultVersion      = ""
+	defaultAddress      = "127.0.0.1:8080"
 	defaultModelsSubdir = "models"
 )

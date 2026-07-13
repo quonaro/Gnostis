@@ -55,13 +55,12 @@ directories:
 	}
 }
 
-func TestLoadDataDirEnv(t *testing.T) {
+func TestLoadPortEnv(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv(envDataDir, dir)
+	t.Setenv("GNOSTIS_PORT", "9090")
 
 	path := filepath.Join(dir, "config.yaml")
 	data := `
-data_dir: /should/be/overridden
 directories:
   - path: ` + dir + `
 `
@@ -73,8 +72,8 @@ directories:
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if cfg.DataDir != dir {
-		t.Errorf("data_dir = %q, want %q", cfg.DataDir, dir)
+	if cfg.MCP.Address != "127.0.0.1:9090" {
+		t.Errorf("mcp.address = %q, want 127.0.0.1:9090", cfg.MCP.Address)
 	}
 }
 

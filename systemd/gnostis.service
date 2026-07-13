@@ -1,0 +1,13 @@
+[Unit]
+Description=Gnostis MCP HTTP server
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.gnostis
+ExecStart=%h/.local/bin/gnostis run
+Restart=unless-stopped
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

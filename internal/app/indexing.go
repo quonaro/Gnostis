@@ -67,6 +67,7 @@ func indexDirectory(ctx context.Context, out io.Writer, dir directory.Directory,
 			_ = prog.Done()
 		}
 		slog.InfoContext(ctx, "no chunks to embed", "project", proj.Name)
+		updateStats(ctx, indexingStats, st, proj.Name)
 		return nil
 	}
 
@@ -106,15 +107,21 @@ func indexDirectory(ctx context.Context, out io.Writer, dir directory.Directory,
 		return fmt.Errorf("store chunks: %w", err)
 	}
 
-	if indexingStats != nil {
-		_ = indexingStats.Update(proj.Name, len(allChunks))
-	}
+	updateStats(ctx, indexingStats, st, proj.Name)
 
 	if prog != nil {
 		_ = prog.Done()
 	}
 	slog.InfoContext(ctx, "stored chunks", "project", proj.Name, "count", len(allChunks))
 	return nil
+}
+
+func updateStats(ctx context.Context, indexingStats *stats.Stats, st store.VectorStore, projectID string) {
+	if indexingStats == nil {
+		return
+	}
+	count, _ := st.CountByProject(ctx, projectID)
+	_ = indexingStats.Update(projectID, count)
 }
 
 type fileChunks struct {
@@ -190,7 +197,7 @@ func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunk
 	return changed, nil
 }
 
-func reindexFile(ctx context.Context, absPath string, dirs []directory.Directory, projects []project.Project, cfg config.Config, st store.VectorStore, sym *symbol.Index, provider embeddings.Provider, cache map[string][]float32) error {
+func reindexFile(ctx context.Context, absPath string, dirs []directory.Directory, projects []project.Project, cfg config.Config, st store.VectorStore, sym *symbol.Index, provider embeddings.Provider, cache map[string][]float32, indexingStats *stats.Stats) error {
 	if len(dirs) != len(projects) {
 		return fmt.Errorf("directory and project count mismatch")
 	}
@@ -199,7 +206,7 @@ func reindexFile(ctx context.Context, absPath string, dirs []directory.Directory
 		if !strings.HasPrefix(absPath, dir.Path) {
 			continue
 		}
-		return reindexFileUnder(ctx, absPath, dir, projects[i], st, sym, provider, cache)
+		return reindexFileUnder(ctx, absPath, dir, projects[i], st, sym, provider, cache, indexingStats)
 	}
 
 	// Path is not under any configured directory. Index it under a synthetic
@@ -207,10 +214,16 @@ func reindexFile(ctx context.Context, absPath string, dirs []directory.Directory
 	parent := filepath.Dir(absPath)
 	dir := directory.FromConfig(cfg.Index, config.Directory{Path: parent, Name: filepath.Base(parent)})
 	proj := project.New(filepath.Base(parent), parent)
-	return reindexFileUnder(ctx, absPath, dir, proj, st, sym, provider, cache)
+	return reindexFileUnder(ctx, absPath, dir, proj, st, sym, provider, cache, indexingStats)
 }
 
-func reindexFileUnder(ctx context.Context, absPath string, dir directory.Directory, proj project.Project, st store.VectorStore, sym *symbol.Index, provider embeddings.Provider, cache map[string][]float32) error {
+func reindexFileUnder(ctx context.Context, absPath string, dir directory.Directory, proj project.Project, st store.VectorStore, sym *symbol.Index, provider embeddings.Provider, cache map[string][]float32, indexingStats *stats.Stats) (err error) {
+	defer func() {
+		if err == nil {
+			updateStats(ctx, indexingStats, st, proj.ID)
+		}
+	}()
+
 	rel, err := filepath.Rel(dir.Path, absPath)
 	if err != nil {
 		return fmt.Errorf("relative path: %w", err)

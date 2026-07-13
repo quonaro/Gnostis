@@ -46,3 +46,13 @@ The `watcher` monitors configured directories with `fsnotify`. Changed files are
 3. Embed and insert new chunks.
 
 Files matching filters are ignored by the watcher.
+
+## Rebuilding
+
+A full rebuild deletes the data directory and re-indexes all projects. The daemon is stopped and restarted automatically by `gnostis rebuild`:
+
+```bash
+gnostis rebuild
+```
+
+`gnostis rebuild` refuses to run if another Gnostis process is active.

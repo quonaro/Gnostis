@@ -70,19 +70,8 @@ func TestReindexFiles_OutsideProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reindexFiles: %v", err)
 	}
-	if res.IsError {
-		t.Fatalf("unexpected error result: %v", res.Content)
-	}
-
-	var got reindexFilesResult
-	if err := json.Unmarshal([]byte(extractText(t, res)), &got); err != nil {
-		t.Fatalf("unmarshal result: %v", err)
-	}
-	if len(got.Reindexed) != 1 || got.Reindexed[0] != path {
-		t.Errorf("unexpected reindexed paths: %+v", got)
-	}
-	if len(mock.paths) != 1 || mock.paths[0] != path {
-		t.Errorf("unexpected paths passed to reindexer: %+v", mock.paths)
+	if !res.IsError {
+		t.Fatal("expected error result for path outside project")
 	}
 }
 

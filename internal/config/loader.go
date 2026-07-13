@@ -13,8 +13,6 @@ import (
 
 var envPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}`)
 
-const envDataDir = "GNOSTIS_DATA_DIR"
-
 // ResolvePath returns the absolute config path that Load would use.
 func ResolvePath(path string) (string, error) {
 	if path == "" {
@@ -50,10 +48,6 @@ func Load(path string) (Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal([]byte(interpolated), &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
-	}
-
-	if v := os.Getenv(envDataDir); v != "" {
-		cfg.DataDir = v
 	}
 
 	applyDefaults(&cfg)
@@ -139,11 +133,11 @@ func applyDefaults(cfg *Config) {
 	if cfg.MCP.Version == "" {
 		cfg.MCP.Version = defaultVersion
 	}
-	if cfg.MCP.Transport == "" {
-		cfg.MCP.Transport = defaultTransport
-	}
 	if cfg.MCP.Address == "" {
 		cfg.MCP.Address = defaultAddress
+		if port := os.Getenv("GNOSTIS_PORT"); port != "" {
+			cfg.MCP.Address = fmt.Sprintf("127.0.0.1:%s", port)
+		}
 	}
 
 	for i := range cfg.Directories {
@@ -178,11 +172,6 @@ func validate(cfg *Config) error {
 
 	if cfg.Embeddings.BatchSize <= 0 {
 		return fmt.Errorf("embeddings batch_size must be positive")
-	}
-
-	transport := strings.ToLower(cfg.MCP.Transport)
-	if transport != "stdio" && transport != "streamable-http" {
-		return fmt.Errorf("unsupported mcp transport: %s", cfg.MCP.Transport)
 	}
 
 	for i, dir := range cfg.Directories {

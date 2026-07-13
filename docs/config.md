@@ -1,21 +1,15 @@
 # Configuration
 
-Gnostis reads its configuration on startup in this order:
+Gnostis reads `~/.gnostis/config.yaml`. Data is always stored in `~/.gnostis/data` and logs in `~/.gnostis/gnostis.log`.
 
-1. A path explicitly set via the `GNOSTIS_CONFIG` environment variable.
-2. `~/.gnostis/config.yaml` as the default location.
+The only environment variable that controls startup behavior is `GNOSTIS_PORT`, which overrides the default HTTP port `8080`.
 
-The following environment variables control startup behavior:
-
-- `GNOSTIS_CONFIG`: path to the YAML config file.
-- `GNOSTIS_DATA_DIR`: persistent data directory for the vector store and metadata. Default: `~/.gnostis/data`.
-
-Environment variables inside the file can be interpolated with `${VAR}` or `${VAR:-default}`.
+Environment variables inside the file can still be interpolated with `${VAR}` or `${VAR:-default}`.
 
 ## Example
 
 ```yaml
-log_level: ${GNOSTIS_LOG_LEVEL:-info}
+log_level: info
 
 embeddings:
   provider: ollama
@@ -57,9 +51,8 @@ directories:
 
 mcp:
   name: gnostis
-  version: "0.1.0"
-  transport: streamable-http
   address: "127.0.0.1:8080"
+  token: ""
 ```
 
 ## Fields
@@ -95,10 +88,12 @@ List of indexing roots. Each entry supports:
 
 ### `mcp`
 
-- `name`: server name.
-- `version`: server version.
-- `transport`: `stdio` or `streamable-http`; `stdio` is recommended for editors, `streamable-http` runs a background HTTP server (MCP Streamable HTTP, endpoint `/mcp`).
-- `address`: listen address for `streamable-http` transport. Default: `:8080`.
+Gnostis only supports the `streamable-http` MCP transport. The endpoint is `/mcp`.
+
+- `name`: server name. Default: `gnostis`.
+- `version`: server version. Default: short git commit hash at build time.
+- `address`: listen address. Default: `127.0.0.1:8080`, or `127.0.0.1:${GNOSTIS_PORT}`.
+- `token`: optional Bearer token. When set, clients must send `Authorization: Bearer <token>`.
 
 ## Filter precedence
 

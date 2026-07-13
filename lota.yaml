@@ -35,12 +35,18 @@ install:
   script: |
     set -euo pipefail
 
-    sudo cp gnostis /usr/local/bin/gnostis
-    echo "==> Installed: /usr/local/bin/gnostis"
-
+    bin_dir="$HOME/.local/bin"
+    bin_path="$bin_dir/gnostis"
     config_dir="$HOME/.gnostis"
     config_path="$config_dir/config.yaml"
-    mkdir -p "$config_dir"
+    unit_dir="$HOME/.config/systemd/user"
+    unit_path="$unit_dir/gnostis.service"
+
+    mkdir -p "$bin_dir" "$config_dir" "$unit_dir"
+
+    cp gnostis "$bin_path"
+    chmod +x "$bin_path"
+    echo "==> Installed: $bin_path"
 
     if [ -f "$config_path" ]; then
       echo "==> Config already exists: $config_path (skipped)"
@@ -48,3 +54,10 @@ install:
       cp config.yaml "$config_path"
       echo "==> Installed config: $config_path"
     fi
+
+    cp systemd/gnostis.service "$unit_path"
+    echo "==> Installed systemd unit: $unit_path"
+
+    systemctl --user daemon-reload
+    systemctl --user enable --now gnostis
+    echo "==> Gnostis service started and enabled"
