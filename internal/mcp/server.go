@@ -160,6 +160,7 @@ func (s *Server) registerTools() {
 	s.server.AddTool(memoryWriteTool(), mcp.NewTypedToolHandler(s.memoryWrite))
 	s.server.AddTool(memoryListTool(), mcp.NewTypedToolHandler(s.memoryList))
 	s.server.AddTool(memoryReadTool(), mcp.NewTypedToolHandler(s.memoryRead))
+	s.server.AddTool(rebuildMemoryTool(), mcp.NewTypedToolHandler(s.rebuildMemory))
 }
 
 func searchCodebaseTool() mcp.Tool {

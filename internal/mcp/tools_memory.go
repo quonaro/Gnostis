@@ -267,6 +267,35 @@ func (s *Server) memoryRead(ctx context.Context, _ mcp.CallToolRequest, args mem
 	return mcp.NewToolResultText(string(content)), nil
 }
 
+type rebuildMemoryResult struct {
+	Chunks int `json:"chunks"`
+}
+
+func rebuildMemoryTool() mcp.Tool {
+	return mcp.NewTool("rebuild_memory",
+		mcp.WithDescription("Clear and rebuild the memory (dialogue/note) index."),
+	)
+}
+
+func (s *Server) rebuildMemory(ctx context.Context, _ mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, error) {
+	slog.InfoContext(ctx, "mcp tool call", "tool", "rebuild_memory")
+
+	if s.memoryManager == nil {
+		return mcp.NewToolResultError("memory is not enabled"), nil
+	}
+
+	if err := s.memoryManager.Rebuild(ctx); err != nil {
+		return nil, fmt.Errorf("rebuild memory: %w", err)
+	}
+
+	res := rebuildMemoryResult{Chunks: s.memoryManager.Store().Count()}
+	data, err := json.Marshal(res)
+	if err != nil {
+		return nil, fmt.Errorf("marshal rebuild memory result: %w", err)
+	}
+	return mcp.NewToolResultText(string(data)), nil
+}
+
 func extractProvider(content string) string {
 	for _, line := range strings.Split(content, "\n") {
 		if strings.HasPrefix(line, "- **Provider:**") {

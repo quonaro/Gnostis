@@ -158,14 +158,17 @@ func (m *Manager) run(ctx context.Context) {
 }
 
 func (m *Manager) syncAll(ctx context.Context) error {
+	var exported int
 	for _, p := range m.providers {
 		if !p.Enabled() {
 			continue
 		}
+		slog.InfoContext(ctx, "syncing memory provider", "provider", p.Name())
 		for _, src := range p.SourceDirs() {
 			entries, err := os.ReadDir(src)
 			if err != nil {
 				if os.IsNotExist(err) {
+					slog.WarnContext(ctx, "memory source dir does not exist, skipping", "provider", p.Name(), "path", src)
 					continue
 				}
 				slog.WarnContext(ctx, "read memory source dir", "provider", p.Name(), "path", src, "error", err)
@@ -178,9 +181,14 @@ func (m *Manager) syncAll(ctx context.Context) error {
 				path := filepath.Join(src, entry.Name())
 				if err := m.exportFile(ctx, path); err != nil {
 					slog.ErrorContext(ctx, "export memory file", "provider", p.Name(), "path", path, "error", err)
+					continue
 				}
+				exported++
 			}
 		}
+	}
+	if exported > 0 {
+		slog.InfoContext(ctx, "memory sync complete", "exported", exported, "chunks", m.Store().Count())
 	}
 	return nil
 }
@@ -196,13 +204,14 @@ func (m *Manager) exportFile(ctx context.Context, path string) error {
 			}
 			plaintext, err := p.Decrypt(path)
 			if err != nil {
+				slog.WarnContext(ctx, "decrypt memory file failed", "provider", p.Name(), "path", path, "error", err)
 				continue
 			}
 			mdPath, err := p.Exporter().ExportSession(p.Provider, path, m.dataDir, plaintext)
 			if err != nil {
 				return fmt.Errorf("export %s: %w", p.Name(), err)
 			}
-			slog.DebugContext(ctx, "memory export", "provider", p.Name(), "source", path, "md", mdPath)
+			slog.InfoContext(ctx, "memory export", "provider", p.Name(), "source", path, "md", mdPath)
 			if err := m.indexer.IndexFile(ctx, p.Name(), mdPath, m.provider, m.cache); err != nil {
 				return fmt.Errorf("index %s: %w", p.Name(), err)
 			}
@@ -219,6 +228,24 @@ func supportedExtensions(p interface{ Name() string }) []string {
 	default:
 		return []string{".pb"}
 	}
+}
+
+// Rebuild clears the memory store and re-exports/re-indexes all enabled providers.
+func (m *Manager) Rebuild(ctx context.Context) error {
+	slog.InfoContext(ctx, "rebuilding memory index")
+
+	store := m.Store()
+	paths := store.Paths()
+	if err := store.DeleteByPaths(ctx, paths); err != nil {
+		return fmt.Errorf("clear memory store: %w", err)
+	}
+
+	if err := m.syncAll(ctx); err != nil {
+		return fmt.Errorf("sync memory providers: %w", err)
+	}
+
+	slog.InfoContext(ctx, "memory rebuild complete", "chunks", store.Count())
+	return nil
 }
 
 // Store returns the underlying memory store for use by MCP tools.

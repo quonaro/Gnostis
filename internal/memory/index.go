@@ -58,7 +58,7 @@ func (idx *Indexer) IndexFile(ctx context.Context, providerID, path string, prov
 		return fmt.Errorf("lookup stored hash: %w", err)
 	}
 	if storedHash == file.Hash {
-		slog.DebugContext(ctx, "memory file unchanged, skipping", "path", path)
+		slog.InfoContext(ctx, "memory file unchanged, skipping", "path", path)
 		return nil
 	}
 
@@ -83,7 +83,7 @@ func (idx *Indexer) IndexFile(ctx context.Context, providerID, path string, prov
 		return fmt.Errorf("store memory chunks: %w", err)
 	}
 
-	slog.DebugContext(ctx, "indexed memory file", "path", path, "provider", providerID, "chunks", len(chunks))
+	slog.InfoContext(ctx, "indexed memory file", "path", path, "provider", providerID, "chunks", len(chunks))
 	return nil
 }
 

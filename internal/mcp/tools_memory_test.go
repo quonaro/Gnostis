@@ -146,6 +146,26 @@ func TestMemoryList(t *testing.T) {
 	}
 }
 
+func TestRebuildMemory(t *testing.T) {
+	srv, _, _ := newMemoryServer(t)
+
+	_, err := srv.memoryWrite(context.Background(), mcp.CallToolRequest{}, memoryWriteArgs{
+		Title:   "Note 1",
+		Content: "content one",
+	})
+	if err != nil {
+		t.Fatalf("memoryWrite: %v", err)
+	}
+
+	res, err := srv.rebuildMemory(context.Background(), mcp.CallToolRequest{}, struct{}{})
+	if err != nil {
+		t.Fatalf("rebuildMemory: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected error: %s", extractText(t, res))
+	}
+}
+
 func TestMemorySearch_Disabled(t *testing.T) {
 	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, nil, nil)
 

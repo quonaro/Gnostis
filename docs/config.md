@@ -144,6 +144,8 @@ You can also export cascade sessions manually without enabling auto-indexing:
 gnostis decrypt-cascade
 ```
 
+To force a full reindex of memory, use the MCP tool `rebuild_memory`.
+
 To export to a different directory, set the `OUTPUT_DIR` variable in your shell.
 
 #### Migration from `cascade` config
