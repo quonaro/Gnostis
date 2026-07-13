@@ -16,11 +16,7 @@ var envPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\
 // ResolvePath returns the absolute config path that Load would use.
 func ResolvePath(path string) (string, error) {
 	if path == "" {
-		var err error
-		path, err = resolveDefaultConfigPath()
-		if err != nil {
-			return "", fmt.Errorf("resolve default config path: %w", err)
-		}
+		path = resolveDefaultConfigPath()
 	}
 
 	abs, err := filepath.Abs(path)
@@ -60,8 +56,8 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
-func resolveDefaultConfigPath() (string, error) {
-	return interpolateEnv(defaultConfigPath), nil
+func resolveDefaultConfigPath() string {
+	return interpolateEnv(defaultConfigPath)
 }
 
 func interpolateEnv(input string) string {

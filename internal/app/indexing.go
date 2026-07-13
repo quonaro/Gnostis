@@ -50,10 +50,7 @@ func indexDirectory(ctx context.Context, out io.Writer, dir directory.Directory,
 		)
 	}
 
-	changed, err := chunkFilesParallel(ctx, files, ch, st, sym, bar, prog)
-	if err != nil {
-		return fmt.Errorf("chunk files: %w", err)
-	}
+	changed := chunkFilesParallel(ctx, files, ch, st, sym, bar, prog)
 
 	allChunks := make([]chunker.Chunk, 0)
 	for _, fc := range changed {
@@ -138,7 +135,7 @@ func progressAdd(bar *progressbar.ProgressBar, prog *progress.Progress, n int) {
 	}
 }
 
-func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunker.Chunker, st store.VectorStore, sym *symbol.Index, bar *progressbar.ProgressBar, prog *progress.Progress) ([]fileChunks, error) {
+func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunker.Chunker, st store.VectorStore, sym *symbol.Index, bar *progressbar.ProgressBar, prog *progress.Progress) []fileChunks {
 	workers := runtime.NumCPU()
 	if workers < 2 {
 		workers = 2
@@ -194,7 +191,7 @@ func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunk
 		sym.RemoveByPath(fc.file.Path)
 		sym.AddChunks(chunksToSymbolChunks(fc.chunks))
 	}
-	return changed, nil
+	return changed
 }
 
 func reindexFile(ctx context.Context, absPath string, dirs []directory.Directory, projects []project.Project, cfg config.Config, st store.VectorStore, sym *symbol.Index, provider embeddings.Provider, cache map[string][]float32, indexingStats *stats.Stats) error {
