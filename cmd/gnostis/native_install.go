@@ -45,15 +45,19 @@ func installHandler(_ context.Context, nctx engine.NativeContext) error {
 	}
 
 	target := filepath.Join(localBin, "gnostis")
-	if _, err := os.Stat(target); err == nil && isInteractive() && !confirm(nctx.Stdout, fmt.Sprintf("%s already exists. Overwrite?", target)) {
-		_, _ = fmt.Fprintln(nctx.Stdout, "cancelled")
-		return nil
-	}
+	if bin == target {
+		_, _ = fmt.Fprintf(nctx.Stdout, "Already running from %s; skipping binary copy.\n", target)
+	} else {
+		if _, err := os.Stat(target); err == nil && isInteractive() && !confirm(nctx.Stdout, fmt.Sprintf("%s already exists. Overwrite?", target)) {
+			_, _ = fmt.Fprintln(nctx.Stdout, "cancelled")
+			return nil
+		}
 
-	if err := copyFile(bin, target); err != nil {
-		return fmt.Errorf("copy binary: %w", err)
+		if err := copyFile(bin, target); err != nil {
+			return fmt.Errorf("copy binary: %w", err)
+		}
+		_ = os.Chmod(target, 0o755)
 	}
-	_ = os.Chmod(target, 0o755)
 
 	unitDir := filepath.Join(home, ".config", "systemd", "user")
 	if err := os.MkdirAll(unitDir, 0o755); err != nil {
@@ -99,14 +103,24 @@ func copyFile(src, dst string) error {
 	}
 	defer func() { _ = in.Close() }()
 
-	out, err := os.Create(dst)
+	tmp := dst + ".tmp"
+	out, err := os.Create(tmp)
 	if err != nil {
-		return fmt.Errorf("create destination: %w", err)
+		return fmt.Errorf("create temp: %w", err)
 	}
-	defer func() { _ = out.Close() }()
-
 	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		_ = os.Remove(tmp)
 		return fmt.Errorf("copy: %w", err)
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close temp: %w", err)
+	}
+
+	if err := os.Rename(tmp, dst); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename temp: %w", err)
 	}
 	return nil
 }
