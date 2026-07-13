@@ -5,26 +5,25 @@ import (
 	"fmt"
 
 	"github.com/quonaro/gnostis/internal/progress"
-	"github.com/quonaro/gnostis/internal/project"
 	"github.com/quonaro/gnostis/internal/stats"
 )
 
 // Status returns the configured project names and current chunk count.
 func (a *App) Status() ([]string, int) {
-	a.rebuildMu.RLock()
-	names := make([]string, len(a.projects))
-	for i, p := range a.projects {
+	snap := a.projectsSnapshot.Load()
+	if snap == nil {
+		return nil, a.store.Count()
+	}
+	names := make([]string, len(*snap))
+	for i, p := range *snap {
 		names[i] = p.Name
 	}
-	a.rebuildMu.RUnlock()
 	return names, a.store.Count()
 }
 
 // Info returns runtime metadata about the active provider and index.
 func (a *App) Info() (provider, model string, symbols int) {
-	a.rebuildMu.RLock()
-	model = a.cfg.Embeddings.Model
-	a.rebuildMu.RUnlock()
+	model, _ = a.modelName.Load().(string)
 	return a.provider.ModelName(), model, a.symbolIndex.Count()
 }
 
@@ -44,13 +43,13 @@ func (a *App) ProjectStats(ctx context.Context) (map[string]stats.Project, error
 		return nil, fmt.Errorf("load stats: %w", err)
 	}
 
-	a.rebuildMu.RLock()
-	projects := make([]project.Project, len(a.projects))
-	copy(projects, a.projects)
-	a.rebuildMu.RUnlock()
+	snap := a.projectsSnapshot.Load()
+	if snap == nil {
+		return map[string]stats.Project{}, nil
+	}
 
-	out := make(map[string]stats.Project, len(projects))
-	for _, p := range projects {
+	out := make(map[string]stats.Project, len(*snap))
+	for _, p := range *snap {
 		count, err := a.store.CountByProject(ctx, p.ID)
 		if err != nil {
 			return nil, fmt.Errorf("count project %q: %w", p.Name, err)

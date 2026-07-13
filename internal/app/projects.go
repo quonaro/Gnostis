@@ -79,11 +79,13 @@ func resolveProjects(cfg config.Config) ([]directory.Directory, []project.Projec
 
 // DiscoverProjects scans root and returns projects that are not already configured.
 func (a *App) DiscoverProjects(ctx context.Context, root string, opts discover.Options) (discover.Result, error) {
-	a.rebuildMu.RLock()
-	defer a.rebuildMu.RUnlock()
+	snap := a.projectsSnapshot.Load()
+	if snap == nil {
+		return discover.FindProjects(root, opts, nil)
+	}
 
 	existing := make(map[string]bool)
-	for _, p := range a.projects {
+	for _, p := range *snap {
 		existing[p.Path] = true
 	}
 	return discover.FindProjects(root, opts, existing)
@@ -124,6 +126,7 @@ func (a *App) AddProject(ctx context.Context, path, name string) error {
 	a.cfg.Directories = append(a.cfg.Directories, d)
 	a.dirs = append(a.dirs, directory.FromConfig(a.cfg.Index, d))
 	a.projects = append(a.projects, project.New(name, absPath))
+	a.updateSnapshots(a.cfg, a.projects)
 
 	if err := a.saveConfig(); err != nil {
 		return fmt.Errorf("save config: %w", err)
@@ -166,6 +169,7 @@ func (a *App) RemoveProject(ctx context.Context, name string) error {
 	// Remove from runtime lists.
 	a.dirs = append(a.dirs[:idx], a.dirs[idx+1:]...)
 	a.projects = append(a.projects[:idx], a.projects[idx+1:]...)
+	a.updateSnapshots(a.cfg, a.projects)
 
 	// Remove from config.
 	cfgIdx := -1

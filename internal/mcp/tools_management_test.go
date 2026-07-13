@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/quonaro/gnostis/internal/discover"
+	"github.com/quonaro/gnostis/internal/progress"
 	"github.com/quonaro/gnostis/internal/project"
 )
 
@@ -153,5 +155,43 @@ func TestDiscoverProjectsResult(t *testing.T) {
 	}
 	if len(result.AlreadyAdded) != 1 || result.AlreadyAdded[0].Name != "old" {
 		t.Errorf("unexpected already added projects: %+v", result.AlreadyAdded)
+	}
+}
+
+func TestGetIndexStatusETA(t *testing.T) {
+	now := time.Now().UTC()
+	mock := &mockIndexer{
+		progressState: progress.State{
+			JobID:       "job-eta",
+			Status:      progress.StatusRunning,
+			Phase:       progress.PhaseEmbedding,
+			Project:     "test",
+			StartedAt:   now.Add(-2 * time.Minute),
+			UpdatedAt:   now,
+			TotalChunks: 1000,
+			DoneChunks:  100,
+		},
+	}
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil)
+	res, err := srv.getIndexStatus(context.Background(), mcp.CallToolRequest{}, getIndexStatusArgs{})
+	if err != nil {
+		t.Fatalf("getIndexStatus: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected error result: %v", res.Content)
+	}
+
+	var result indexStatusResult
+	if err := json.Unmarshal([]byte(extractText(t, res)), &result); err != nil {
+		t.Fatalf("unmarshal status: %v", err)
+	}
+	if result.ETA == "" {
+		t.Errorf("expected non-empty ETA, got empty")
+	}
+	if result.ETASeconds <= 0 {
+		t.Errorf("expected positive ETA seconds, got %d", result.ETASeconds)
+	}
+	if result.Progress.Project != "test" {
+		t.Errorf("progress project = %q, want test", result.Progress.Project)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestProgressStateLifecycle(t *testing.T) {
@@ -101,5 +102,45 @@ func TestProgressLoadPreservesJobID(t *testing.T) {
 	s, _ = p.Load()
 	if s.JobID != "project:RuobrOld-123" {
 		t.Fatalf("expected resumed job id %q, got %q", "project:RuobrOld-123", s.JobID)
+	}
+}
+
+func TestStateETA(t *testing.T) {
+	now := time.Now().UTC()
+	s := State{
+		Status:      StatusRunning,
+		Phase:       PhaseEmbedding,
+		StartedAt:   now.Add(-2 * time.Minute),
+		UpdatedAt:   now,
+		TotalChunks: 1000,
+		DoneChunks:  100,
+	}
+	eta := s.ETA()
+	if eta <= 0 {
+		t.Fatalf("expected positive ETA, got %v", eta)
+	}
+	// 100 chunks in 2 minutes => rate 0.833 chunks/sec => 900 remaining => ~1080s.
+	if eta < 15*time.Minute || eta > 21*time.Minute {
+		t.Errorf("ETA = %v, want between 15m and 21m", eta)
+	}
+}
+
+func TestStateETAEdgeCases(t *testing.T) {
+	now := time.Now().UTC()
+	cases := []struct {
+		name  string
+		state State
+	}{
+		{"idle", State{Status: StatusIdle, StartedAt: now, TotalChunks: 100, DoneChunks: 10}},
+		{"zero done", State{Status: StatusRunning, StartedAt: now, TotalChunks: 100, DoneChunks: 0}},
+		{"zero total", State{Status: StatusRunning, StartedAt: now, TotalChunks: 0, DoneChunks: 0}},
+		{"all done", State{Status: StatusRunning, StartedAt: now, TotalChunks: 100, DoneChunks: 100}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if eta := tc.state.ETA(); eta != 0 {
+				t.Errorf("expected zero ETA, got %v", eta)
+			}
+		})
 	}
 }

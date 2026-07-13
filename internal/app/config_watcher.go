@@ -163,6 +163,7 @@ func (a *App) ReloadConfig(ctx context.Context) error {
 	a.cfg = cfg
 	a.dirs = dirs
 	a.projects = projects
+	a.updateSnapshots(cfg, projects)
 
 	if a.mcp != nil {
 		a.mcp.ReloadProjects(projects)

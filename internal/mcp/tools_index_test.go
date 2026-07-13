@@ -20,11 +20,15 @@ type mockIndexer struct {
 	err            error
 	discoverResult discover.Result
 	discoverCalled bool
+	progressState  progress.State
 }
 
 func (m *mockIndexer) Status() ([]string, int)     { return nil, 0 }
 func (m *mockIndexer) Info() (string, string, int) { return "", "", 0 }
 func (m *mockIndexer) ProgressState() (progress.State, error) {
+	if m.progressState.Status != "" {
+		return m.progressState, nil
+	}
 	return progress.State{JobID: "job-1", Status: progress.StatusIdle}, nil
 }
 func (m *mockIndexer) ProjectStats(context.Context) (map[string]stats.Project, error) {

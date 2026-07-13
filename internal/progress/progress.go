@@ -41,6 +41,26 @@ type State struct {
 	Error       string    `json:"error,omitempty"`
 }
 
+// ETA estimates the remaining time based on the current processing rate.
+// It returns 0 when the job is not running, no chunks have been processed,
+// or all chunks are already done.
+func (s State) ETA() time.Duration {
+	if s.Status != StatusRunning || s.DoneChunks <= 0 || s.TotalChunks <= 0 || s.DoneChunks >= s.TotalChunks {
+		return 0
+	}
+	elapsed := time.Now().UTC().Sub(s.StartedAt)
+	if elapsed <= 0 {
+		return 0
+	}
+	rate := float64(s.DoneChunks) / elapsed.Seconds()
+	remaining := float64(s.TotalChunks-s.DoneChunks) / rate
+	seconds := int64(remaining)
+	if seconds < 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
+
 // Progress persists rebuild progress to a JSON file.
 type Progress struct {
 	mu    sync.Mutex

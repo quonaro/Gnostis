@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -50,11 +51,13 @@ type App struct {
 	ProgressWriter io.Writer
 	ConfigPath     string
 
-	jobMu          sync.Mutex
-	jobRunning     bool
-	currentJobID   string
-	rebuildMu      sync.RWMutex
-	watcherStarted bool
+	jobMu            sync.Mutex
+	jobRunning       bool
+	currentJobID     string
+	rebuildMu        sync.RWMutex
+	watcherStarted   bool
+	projectsSnapshot atomic.Pointer[[]project.Project]
+	modelName        atomic.Value
 }
 
 // New builds the application from configuration.
@@ -102,6 +105,7 @@ func New(cfg config.Config) (*App, error) {
 		indexingStats:  stats.New(filepath.Join(cfg.DataDir, "project-stats.json")),
 		lock:           lock.New(filepath.Dir(cfg.DataDir)),
 	}
+	a.updateSnapshots(cfg, projects)
 
 	mcpSrv := mcpServer.New(cfg.MCP.Name, cfg.MCP.Version, engine, symbolIndex, a, projects)
 	a.mcp = mcpSrv
@@ -109,6 +113,14 @@ func New(cfg config.Config) (*App, error) {
 	a.watcher = a.newWatcher()
 
 	return a, nil
+}
+
+// updateSnapshots updates the lock-free copies used by status/read-only APIs.
+// It must be called while rebuildMu is held (or during construction).
+func (a *App) updateSnapshots(cfg config.Config, projects []project.Project) {
+	snapshot := append([]project.Project(nil), projects...)
+	a.projectsSnapshot.Store(&snapshot)
+	a.modelName.Store(cfg.Embeddings.Model)
 }
 
 // Run serves the MCP HTTP server while performing initial indexing and starting

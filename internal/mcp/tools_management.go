@@ -23,6 +23,8 @@ type indexStatusResult struct {
 	Model        string                   `json:"model"`
 	Symbols      int                      `json:"symbols"`
 	Progress     progress.State           `json:"progress"`
+	ETA          string                   `json:"eta,omitempty"`
+	ETASeconds   int64                    `json:"eta_seconds,omitempty"`
 	ProjectStats map[string]stats.Project `json:"project_stats"`
 }
 
@@ -51,6 +53,7 @@ func (s *Server) getIndexStatus(ctx context.Context, request mcp.CallToolRequest
 		return nil, fmt.Errorf("load project stats: %w", err)
 	}
 
+	eta := pstate.ETA()
 	result := indexStatusResult{
 		Projects:     projects,
 		TotalChunks:  chunks,
@@ -59,6 +62,10 @@ func (s *Server) getIndexStatus(ctx context.Context, request mcp.CallToolRequest
 		Symbols:      symbols,
 		Progress:     pstate,
 		ProjectStats: pst,
+	}
+	if eta > 0 {
+		result.ETA = eta.String()
+		result.ETASeconds = int64(eta.Seconds())
 	}
 
 	data, err := json.Marshal(result)
