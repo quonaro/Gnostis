@@ -231,7 +231,7 @@ func (s *Server) getFileContext(ctx context.Context, request mcp.CallToolRequest
 	content, err := os.ReadFile(clean)
 	if err != nil {
 		slog.ErrorContext(ctx, "get_file_context failed", "path", clean, "error", err)
-		return nil, fmt.Errorf("read file: %w", err)
+		return mcp.NewToolResultError(fmt.Sprintf("read file: %v", err)), nil
 	}
 
 	lines := strings.Split(string(content), "\n")

@@ -144,6 +144,19 @@ func TestGetFileContext(t *testing.T) {
 	}
 }
 
+func TestGetFileContext_MissingFile(t *testing.T) {
+	dir := t.TempDir()
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, nil, []project.Project{{Name: "test", Path: dir}})
+
+	res, err := srv.getFileContext(context.Background(), mcp.CallToolRequest{}, getFileContextArgs{Path: filepath.Join(dir, "missing.go")})
+	if err != nil {
+		t.Fatalf("getFileContext returned internal error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected error result for missing file")
+	}
+}
+
 func TestListProjects(t *testing.T) {
 	projects := []project.Project{
 		{Name: "foo", Path: "/projects/foo"},
