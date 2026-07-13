@@ -26,6 +26,7 @@ type Index struct {
 }
 
 // Directory configures a single indexed root.
+// When Auto is true, the directory is expanded into subprojects by discovery.
 type Directory struct {
 	Path          string   `yaml:"path"`
 	Name          string   `yaml:"name"`
@@ -33,6 +34,18 @@ type Directory struct {
 	Include       []string `yaml:"include"`
 	Exclude       []string `yaml:"exclude"`
 	MaxFileSizeMB int      `yaml:"max_file_size_mb"`
+	Auto          bool     `yaml:"auto"`
+	Depth         int      `yaml:"depth"`
+	Discover      Discover `yaml:"discover"`
+}
+
+// Discover controls which markers trigger auto project detection.
+type Discover struct {
+	Git         bool `yaml:"git"`
+	Go          bool `yaml:"go"`
+	NodeModules bool `yaml:"node_modules"`
+	Venv        bool `yaml:"venv"`
+	Workspace   bool `yaml:"workspace"`
 }
 
 // MCP configures the Model Context Protocol server.

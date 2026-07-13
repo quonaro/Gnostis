@@ -11,10 +11,12 @@ import (
 
 // Options controls which marker files trigger project detection.
 type Options struct {
-	Git  bool
-	Go   bool
-	NM   bool
-	Venv bool
+	Git         bool
+	Go          bool
+	NodeModules bool
+	Venv        bool
+	Workspace   bool
+	Depth       int
 }
 
 // Project represents a discovered directory entry.
@@ -39,7 +41,7 @@ type marker struct {
 var markers = []marker{
 	{flag: "git", path: ".git", enabled: func(o Options) bool { return o.Git }},
 	{flag: "go", path: "go.mod", enabled: func(o Options) bool { return o.Go }},
-	{flag: "nm", path: "node_modules", enabled: func(o Options) bool { return o.NM }},
+	{flag: "nm", path: "node_modules", enabled: func(o Options) bool { return o.NodeModules }},
 	{flag: "venv", path: ".venv", enabled: func(o Options) bool { return o.Venv }},
 }
 
@@ -51,33 +53,24 @@ func FindProjects(root string, opts Options, existing map[string]bool) (Result, 
 		return Result{}, fmt.Errorf("resolve root path: %w", err)
 	}
 
-	entries, err := os.ReadDir(absRoot)
-	if err != nil {
-		return Result{}, fmt.Errorf("read directory %s: %w", absRoot, err)
+	if opts.Depth == 0 {
+		opts.Depth = 1
 	}
 
-	noFilter := !opts.Git && !opts.Go && !opts.NM && !opts.Venv
+	all, err := Expand(root, opts)
+	if err != nil {
+		return Result{}, fmt.Errorf("expand root: %w", err)
+	}
 
 	var result Result
-	for _, entry := range entries {
-		if !entry.IsDir() {
+	for _, p := range all {
+		if p.Path == absRoot {
 			continue
 		}
-
-		projectPath := filepath.Join(absRoot, entry.Name())
-		if shouldSkip(projectPath) {
-			continue
-		}
-
-		if !matchesFilter(projectPath, opts, noFilter) {
-			continue
-		}
-
-		project := Project{Path: projectPath, Name: entry.Name()}
-		if existing[projectPath] {
-			result.AlreadyAdded = append(result.AlreadyAdded, project)
+		if existing[p.Path] {
+			result.AlreadyAdded = append(result.AlreadyAdded, p)
 		} else {
-			result.New = append(result.New, project)
+			result.New = append(result.New, p)
 		}
 	}
 

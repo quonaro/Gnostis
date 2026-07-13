@@ -2,32 +2,10 @@ run:
   desc: Start the Gnostis server
   native: true
 
-status:
-  desc: Show index status
+install:
+  desc: Install gnostis as a systemd user service
   native: true
 
-rebuild:
-  desc: Rebuild the full index, a project, or specific files and directories
-  native: true
-  args:
-  - "...paths:str"
-  - "detach|d:bool=false"
-
-validate:
-  desc: Validate config without starting the server
-  native: true
-
-show:
+config:
   desc: Show interpolated config with secrets masked
   native: true
-
-discover:
-  desc: Discover projects under a directory and add them to config
-  native: true
-  args:
-  - "path:str"
-  - "git:bool=false"
-  - "go:bool=false"
-  - "nm:bool=false"
-  - "venv:bool=false"
-  - "backup:bool=false"

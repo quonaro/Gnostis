@@ -136,6 +136,17 @@ func applyDefaults(cfg *Config) {
 		if cfg.Directories[i].MaxFileSizeMB == 0 {
 			cfg.Directories[i].MaxFileSizeMB = 5
 		}
+		if cfg.Directories[i].Auto && cfg.Directories[i].Depth == 0 {
+			cfg.Directories[i].Depth = 3
+		}
+		if cfg.Directories[i].Auto && !cfg.Directories[i].Discover.Git &&
+			!cfg.Directories[i].Discover.Go &&
+			!cfg.Directories[i].Discover.NodeModules &&
+			!cfg.Directories[i].Discover.Venv &&
+			!cfg.Directories[i].Discover.Workspace {
+			cfg.Directories[i].Discover.Git = true
+			cfg.Directories[i].Discover.Workspace = true
+		}
 	}
 }
 

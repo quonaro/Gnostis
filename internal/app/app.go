@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -47,18 +46,22 @@ type App struct {
 	indexingStats  *stats.Stats
 	lock           *lock.Lock
 	ProgressWriter io.Writer
+	ConfigPath     string
+
+	jobMu          sync.Mutex
+	jobRunning     bool
+	currentJobID   string
+	rebuildMu      sync.Mutex
+	watcherStarted bool
 }
 
 // New builds the application from configuration.
 func New(cfg config.Config) (*App, error) {
 	slog.Info("initializing app", "data_dir", cfg.DataDir, "provider", cfg.Embeddings.Provider, "model", cfg.Embeddings.Model)
 
-	dirs := make([]directory.Directory, len(cfg.Directories))
-	projects := make([]project.Project, len(cfg.Directories))
-
-	for i, d := range cfg.Directories {
-		dirs[i] = directory.FromConfig(cfg.Index, d)
-		projects[i] = project.New(d.Name, d.Path)
+	dirs, projects, err := resolveProjects(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("resolve projects: %w", err)
 	}
 
 	ctx := context.Background()
@@ -127,7 +130,7 @@ func (a *App) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -153,8 +156,18 @@ func (a *App) Run(ctx context.Context) error {
 			cancel()
 			return
 		}
+		a.watcherStarted = true
 		<-ctx.Done()
 		_ = a.watcher.Stop()
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := a.watchConfig(ctx); err != nil && err != context.Canceled {
+			errCh <- fmt.Errorf("config watcher: %w", err)
+			cancel()
+		}
 	}()
 
 	wg.Wait()
@@ -215,151 +228,4 @@ func (a *App) initialIndex(ctx context.Context) error {
 // InitialIndex performs the first-time indexing of all configured directories.
 func (a *App) InitialIndex(ctx context.Context) error {
 	return a.initialIndex(ctx)
-}
-
-// RebuildProject removes the existing index for a single project and reindexes it.
-func (a *App) RebuildProject(ctx context.Context, name string) error {
-	for i, p := range a.projects {
-		if p.Name != name {
-			continue
-		}
-
-		slog.InfoContext(ctx, "rebuilding project", "project", p.Name, "path", a.dirs[i].Path)
-
-		if err := a.deleteChunksByPrefix(ctx, a.dirs[i].Path); err != nil {
-			_ = a.progress.Fail(err)
-			return fmt.Errorf("delete project chunks: %w", err)
-		}
-
-		if err := indexDirectory(ctx, a.ProgressWriter, a.dirs[i], p, a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache, a.progress, a.indexingStats); err != nil {
-			return fmt.Errorf("index %s: %w", a.dirs[i].Path, err)
-		}
-
-		if err := a.symbolIndex.Save(); err != nil {
-			_ = a.progress.Fail(err)
-			return fmt.Errorf("save symbol index: %w", err)
-		}
-
-		slog.InfoContext(ctx, "project rebuild complete", "project", p.Name, "chunks", a.store.Count())
-		return nil
-	}
-
-	return fmt.Errorf("project %q not found", name)
-}
-
-// deleteChunksByPrefix removes all indexed chunks whose path is under prefix.
-func (a *App) deleteChunksByPrefix(ctx context.Context, prefix string) error {
-	var toDelete []string
-	for _, path := range a.store.Paths() {
-		if !isUnderPath(path, prefix) {
-			continue
-		}
-		toDelete = append(toDelete, path)
-		a.symbolIndex.RemoveByPath(path)
-	}
-	if err := a.store.DeleteByPaths(ctx, toDelete); err != nil {
-		return fmt.Errorf("delete chunks: %w", err)
-	}
-	return nil
-}
-
-func isUnderPath(path, root string) bool {
-	if root == string(filepath.Separator) {
-		return true
-	}
-	if !strings.HasPrefix(path, root) {
-		return false
-	}
-	if len(path) == len(root) {
-		return true
-	}
-	return path[len(root)] == filepath.Separator
-}
-
-// rebuildDirectory removes existing chunks under dirPath and reindexes the directory.
-func (a *App) rebuildDirectory(ctx context.Context, dirPath string) error {
-	slog.InfoContext(ctx, "rebuilding directory", "path", dirPath)
-
-	if err := a.deleteChunksByPrefix(ctx, dirPath); err != nil {
-		return fmt.Errorf("delete directory chunks: %w", err)
-	}
-
-	dir := directory.FromConfig(a.cfg.Index, config.Directory{Path: dirPath, Name: filepath.Base(dirPath)})
-	proj := project.New(filepath.Base(dirPath), dirPath)
-
-	if err := indexDirectory(ctx, a.ProgressWriter, dir, proj, a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache, nil, a.indexingStats); err != nil {
-		return fmt.Errorf("index directory: %w", err)
-	}
-
-	slog.InfoContext(ctx, "directory rebuild complete", "path", dirPath, "chunks", a.store.Count())
-	return nil
-}
-
-// rebuildFile removes existing chunks for a single file and reindexes it.
-func (a *App) rebuildFile(ctx context.Context, filePath string) error {
-	_ = a.store.DeleteByPath(ctx, filePath)
-	a.symbolIndex.RemoveByPath(filePath)
-
-	if err := reindexFile(ctx, filePath, a.dirs, a.projects, a.cfg, a.store, a.symbolIndex, a.provider, a.embeddingCache, a.indexingStats); err != nil {
-		return fmt.Errorf("reindex file: %w", err)
-	}
-	return nil
-}
-
-// ReindexFiles reindexes the given file or directory paths and persists the symbol index.
-// Paths outside configured directories are indexed with global defaults.
-func (a *App) ReindexFiles(ctx context.Context, paths []string) error {
-	for _, raw := range paths {
-		path, err := filepath.Abs(raw)
-		if err != nil {
-			return fmt.Errorf("resolve path %q: %w", raw, err)
-		}
-
-		info, err := os.Stat(path)
-		if err != nil {
-			return fmt.Errorf("stat %s: %w", path, err)
-		}
-
-		if info.IsDir() {
-			if err := a.rebuildDirectory(ctx, path); err != nil {
-				return fmt.Errorf("reindex directory %s: %w", path, err)
-			}
-			continue
-		}
-
-		if err := a.rebuildFile(ctx, path); err != nil {
-			return fmt.Errorf("reindex file %s: %w", path, err)
-		}
-	}
-	if err := a.symbolIndex.Save(); err != nil {
-		return fmt.Errorf("save symbol index: %w", err)
-	}
-	return nil
-}
-
-// RebuildPaths rebuilds the index for the given paths. Configured project names are
-// rebuilt as projects; files and directories are reindexed directly, even when they
-// are not part of the configuration.
-func (a *App) RebuildPaths(ctx context.Context, paths []string) error {
-	for _, raw := range paths {
-		matched := false
-		for _, p := range a.projects {
-			if p.Name != raw {
-				continue
-			}
-			matched = true
-			if err := a.RebuildProject(ctx, p.Name); err != nil {
-				return fmt.Errorf("rebuild project %s: %w", p.Name, err)
-			}
-			break
-		}
-		if matched {
-			continue
-		}
-
-		if err := a.ReindexFiles(ctx, []string{raw}); err != nil {
-			return fmt.Errorf("rebuild path %s: %w", raw, err)
-		}
-	}
-	return nil
 }

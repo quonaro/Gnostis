@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/quonaro/gnostis/internal/embeddings"
 	"github.com/quonaro/gnostis/internal/store"
@@ -36,11 +38,16 @@ func New(s store.VectorStore, p embeddings.Provider) *Engine {
 }
 
 // Search performs a vector search with optional metadata filters.
+// A "path" filter is treated as an absolute path prefix and is applied after
+// the vector query.
 func (e *Engine) Search(ctx context.Context, query string, filters map[string]string, topK int) ([]Result, error) {
 	if topK <= 0 {
 		topK = 10
 	}
-	slog.DebugContext(ctx, "search", "query", query, "filters", filters, "top_k", topK)
+
+	pathPrefix, queryFilters := pathPrefixFromFilters(filters)
+
+	slog.DebugContext(ctx, "search", "query", query, "filters", queryFilters, "path_prefix", pathPrefix, "top_k", topK)
 
 	vectors, err := e.provider.Embed(ctx, []string{query})
 	if err != nil {
@@ -50,7 +57,12 @@ func (e *Engine) Search(ctx context.Context, query string, filters map[string]st
 		return nil, fmt.Errorf("empty query embedding")
 	}
 
-	raw, err := e.store.Query(ctx, vectors[0], topK*2, filters)
+	limit := topK * 2
+	if pathPrefix != "" {
+		limit = topK * 4
+	}
+
+	raw, err := e.store.Query(ctx, vectors[0], limit, queryFilters)
 	if err != nil {
 		return nil, fmt.Errorf("query store: %w", err)
 	}
@@ -58,6 +70,9 @@ func (e *Engine) Search(ctx context.Context, query string, filters map[string]st
 	results := make([]Result, 0, len(raw))
 	for _, r := range raw {
 		res := resultFromChromem(r)
+		if pathPrefix != "" && !isUnderPath(res.Path, pathPrefix) {
+			continue
+		}
 		res.Score = boostScore(res, query, r.Similarity)
 		results = append(results, res)
 	}
@@ -72,4 +87,36 @@ func (e *Engine) Search(ctx context.Context, query string, filters map[string]st
 
 	slog.DebugContext(ctx, "search results", "count", len(results))
 	return results, nil
+}
+
+func pathPrefixFromFilters(filters map[string]string) (string, map[string]string) {
+	if filters == nil {
+		return "", nil
+	}
+	pathPrefix := filters["path"]
+	if pathPrefix == "" {
+		return "", filters
+	}
+
+	queryFilters := make(map[string]string, len(filters)-1)
+	for k, v := range filters {
+		if k == "path" {
+			continue
+		}
+		queryFilters[k] = v
+	}
+	return pathPrefix, queryFilters
+}
+
+func isUnderPath(path, root string) bool {
+	if root == string(filepath.Separator) {
+		return true
+	}
+	if !strings.HasPrefix(path, root) {
+		return false
+	}
+	if len(path) == len(root) {
+		return true
+	}
+	return path[len(root)] == filepath.Separator
 }

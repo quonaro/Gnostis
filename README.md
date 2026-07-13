@@ -34,8 +34,6 @@ The daemon listens on `http://127.0.0.1:8080/mcp` (override with `GNOSTIS_PORT`)
 systemctl --user status gnostis    # check daemon status
 systemctl --user stop gnostis      # stop the daemon
 systemctl --user restart gnostis   # restart the daemon
-gnostis status                     # show index and daemon status
-gnostis rebuild                    # stop daemon, rebuild the index, and start it again
 ```
 
 ## CLI
@@ -43,11 +41,9 @@ gnostis rebuild                    # stop daemon, rebuild the index, and start i
 Gnostis embeds the Lota task runner. Run `gnostis` without arguments to see help.
 
 ```bash
-gnostis run                        # start the HTTP MCP server in the foreground
-gnostis status                     # list projects, chunk count, and daemon status
-gnostis rebuild                    # delete the index and rebuild it
-gnostis validate                   # validate config.yaml
-gnostis show                       # print config with secrets masked
-gnostis discover /path             # add first-level directories as projects
-gnostis discover /path --git --backup  # only git repos, with backup
+gnostis run      # start the HTTP MCP server in the foreground
+gnostis install  # install ~/.local/bin/gnostis and the systemd user unit
+gnostis config   # print config with secrets masked
 ```
+
+Use `get_index_status`, `rebuild_project`, `rebuild_index`, `discover_projects`, `add_project`, and `remove_project` MCP tools to manage indexing and projects.

@@ -11,6 +11,7 @@ Semantic search over indexed code and documentation.
 
 - `query` (string, required)
 - `project` (string, optional)
+- `path` (string, optional) — absolute path prefix to filter results.
 - `language` (string, optional)
 - `top_k` (int, optional, default 10)
 - `include_content` (bool, optional, default true)
@@ -128,6 +129,83 @@ Reindex specific files so their latest content is searchable. Only paths inside 
 - `paths` (array of strings, required) — absolute file paths to reindex.
 
 **Returns:** object with `reindexed` array of paths.
+
+## `get_index_status`
+
+Return the current index status, project list, provider/model, and progress.
+
+**Parameters:** none.
+
+**Returns:** object with `projects`, `total_chunks`, `provider`, `model`, `symbols`, `progress`, and `project_stats`.
+
+## `get_index_job`
+
+Return the status of a previously started rebuild job.
+
+**Parameters:**
+
+- `job_id` (string, required) — value returned by `rebuild_project` or `rebuild_index`.
+
+**Returns:** progress state object.
+
+## `rebuild_project`
+
+Rebuild the index for a single project. The operation runs in the background.
+
+**Parameters:**
+
+- `project` (string, required)
+- `confirm` (bool, required) — must be `true`.
+
+**Returns:** object with `job_id`.
+
+## `rebuild_index`
+
+Rebuild the entire index. The operation runs in the background and may take a while.
+
+**Parameters:**
+
+- `confirm` (bool, required) — must be `true`.
+
+**Returns:** object with `job_id`.
+
+## `discover_projects`
+
+Discover projects under a directory and show what would be added.
+
+**Parameters:**
+
+- `path` (string, required) — absolute directory path.
+- `depth` (int, optional, default 3)
+- `git` (bool, optional, default true)
+- `go` (bool, optional, default false)
+- `node_modules` (bool, optional, default false)
+- `venv` (bool, optional, default false)
+- `workspace` (bool, optional, default true)
+
+**Returns:** object with `new` and `already_added` arrays.
+
+## `add_project`
+
+Add a directory to the index and write it to `config.yaml`.
+
+**Parameters:**
+
+- `path` (string, required) — absolute directory path.
+- `name` (string, optional) — project name, defaults to directory name.
+
+**Returns:** object with `added`.
+
+## `remove_project`
+
+Remove a project from the index and `config.yaml`.
+
+**Parameters:**
+
+- `name` (string, required)
+- `confirm` (bool, required) — must be `true`.
+
+**Returns:** object with `removed`.
 
 ## Planned tools
 

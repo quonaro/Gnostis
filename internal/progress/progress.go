@@ -27,6 +27,7 @@ const (
 
 // State describes the progress of an index rebuild.
 type State struct {
+	JobID       string    `json:"job_id,omitempty"`
 	Status      string    `json:"status"`
 	Phase       string    `json:"phase"`
 	Project     string    `json:"project"`
@@ -44,6 +45,7 @@ type State struct {
 type Progress struct {
 	mu    sync.Mutex
 	path  string
+	jobID string
 	state State
 }
 
@@ -72,7 +74,20 @@ func (p *Progress) Load() (State, error) {
 		return State{}, fmt.Errorf("decode progress file: %w", err)
 	}
 	p.state = s
-	return s, nil
+	if p.jobID != "" {
+		p.state.JobID = p.jobID
+	}
+	return p.state, nil
+}
+
+// SetJobID sets the identifier of the current rebuild job.
+// It is preserved across Start/SetPhase/AddFiles calls.
+func (p *Progress) SetJobID(id string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.jobID = id
+	p.state.JobID = id
+	_ = p.saveLocked()
 }
 
 // Start resets the state for a new rebuild of the given project.
@@ -82,6 +97,7 @@ func (p *Progress) Start(project string, totalFiles int) error {
 
 	now := time.Now().UTC()
 	p.state = State{
+		JobID:      p.jobID,
 		Status:     StatusRunning,
 		Phase:      PhaseIndexing,
 		Project:    project,

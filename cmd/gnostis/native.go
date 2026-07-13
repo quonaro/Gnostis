@@ -67,6 +67,12 @@ func runApp(cfg config.Config, _ io.Writer) error {
 		return fmt.Errorf("initialize app: %w", err)
 	}
 
+	cfgPath, err := config.ResolvePath("")
+	if err != nil {
+		return fmt.Errorf("resolve config path: %w", err)
+	}
+	application.ConfigPath = cfgPath
+
 	ctx := context.Background()
 	if err := application.Run(ctx); err != nil {
 		return fmt.Errorf("run app: %w", err)

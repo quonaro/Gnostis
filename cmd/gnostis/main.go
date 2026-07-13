@@ -64,11 +64,8 @@ func main() {
 
 	builder := engine.NewBuilder("gnostis", cliYAML)
 	builder.RegisterNative("run", runHandler)
-	builder.RegisterNative("status", indexStatusHandler)
-	builder.RegisterNative("rebuild", indexRebuildHandler)
-	builder.RegisterNative("validate", configValidateHandler)
-	builder.RegisterNative("show", configShowHandler)
-	builder.RegisterNative("discover", configDiscoverHandler)
+	builder.RegisterNative("install", installHandler)
+	builder.RegisterNative("config", configShowHandler)
 
 	app, err := builder.Build()
 	if err != nil {

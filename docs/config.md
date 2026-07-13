@@ -49,6 +49,17 @@ directories:
       - "**/__pycache__/**"
       - "**/*.pyc"
 
+  - path: ${HOME}/CascadeProjects
+    name: my-workspaces
+    auto: true
+    depth: 3
+    discover:
+      git: true
+      go: true
+      node_modules: false
+      venv: false
+      workspace: true
+
 mcp:
   name: gnostis
   address: "127.0.0.1:8080"
@@ -81,6 +92,14 @@ List of indexing roots. Each entry supports:
 
 - `path` (required): absolute directory path.
 - `name`: project name; inferred from directory name if omitted.
+- `auto`: when `true`, automatically discover projects under `path` using the `discover` rules. Default: `false`.
+- `depth`: maximum recursion depth for auto-discovery. Default: `2`.
+- `discover`: markers used to detect projects when `auto` is `true`:
+  - `git`: directories containing `.git`. Default: `true`.
+  - `go`: directories containing `go.mod`. Default: `false`.
+  - `node_modules`: directories containing `node_modules`. Default: `false`.
+  - `venv`: directories containing `.venv`. Default: `false`.
+  - `workspace`: parse `.code-workspace` files and include their folders. Default: `true`.
 - `extensions`: overrides `index.default_extensions`.
 - `include`: if set, only matching files are indexed.
 - `exclude`: excluded globs; merged with defaults.
@@ -105,19 +124,6 @@ Gnostis only supports the `streamable-http` MCP transport. The endpoint is `/mcp
 
 ## Discovering projects
 
-The `gnostis discover <path>` command scans `<path>` and proposes adding every first-level subdirectory as a project.
+Auto-discovery is configured in `config.yaml` by setting `auto: true` on a directory. Gnostis scans the directory and adds matching projects on startup. Changes to `config.yaml` are detected at runtime and reload automatically.
 
-```bash
-gnostis discover /home/user/CascadeProjects/my
-gnostis discover /home/user/CascadeProjects/my --git --backup
-```
-
-Flags:
-
-- `--git` — only include directories that contain `.git`.
-- `--go` — only include directories that contain `go.mod`.
-- `--nm` — only include directories that contain `node_modules`.
-- `--venv` — only include directories that contain `.venv`.
-- `--backup` — create a numbered backup of `config.yaml` before writing.
-
-When multiple flags are provided, a directory matching any of them is included. The command shows a preview and asks for `[Y/n]` confirmation before modifying the config. Already configured directories are shown as `already configured` and skipped.
+Alternatively, use the `discover_projects` MCP tool to preview which projects would be added under a given path.

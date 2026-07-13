@@ -10,8 +10,11 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpServer "github.com/mark3labs/mcp-go/server"
 
+	"github.com/quonaro/gnostis/internal/discover"
+	"github.com/quonaro/gnostis/internal/progress"
 	"github.com/quonaro/gnostis/internal/project"
 	"github.com/quonaro/gnostis/internal/search"
+	"github.com/quonaro/gnostis/internal/stats"
 	"github.com/quonaro/gnostis/internal/symbol"
 )
 
@@ -26,33 +29,42 @@ type Finder interface {
 	SearchFuzzy(query string) []symbol.Location
 }
 
-// Reindexer reindexes specific files so the search engine reflects their latest content.
-type Reindexer interface {
+// Indexer exposes the operations MCP tools can perform on the index.
+type Indexer interface {
+	Status() ([]string, int)
+	Info() (provider, model string, symbols int)
+	ProgressState() (progress.State, error)
+	ProjectStats(ctx context.Context) (map[string]stats.Project, error)
 	ReindexFiles(ctx context.Context, paths []string) error
+	StartRebuildProject(ctx context.Context, name string) (string, error)
+	StartRebuildIndex(ctx context.Context) (string, error)
+	DiscoverProjects(ctx context.Context, root string, opts discover.Options) (discover.Result, error)
+	AddProject(ctx context.Context, path, name string) error
+	RemoveProject(ctx context.Context, name string) error
 }
 
 // Server wraps the mcp-go server and exposes Gnostis tools.
 type Server struct {
-	server    *mcpServer.MCPServer
-	http      *mcpServer.StreamableHTTPServer
-	name      string
-	version   string
-	engine    Searcher
-	symbols   Finder
-	reindexer Reindexer
-	projects  []project.Project
+	server   *mcpServer.MCPServer
+	http     *mcpServer.StreamableHTTPServer
+	name     string
+	version  string
+	engine   Searcher
+	symbols  Finder
+	indexer  Indexer
+	projects []project.Project
 }
 
 // New creates and configures the MCP server.
-func New(name, version string, engine Searcher, symbols Finder, reindexer Reindexer, projects []project.Project) *Server {
+func New(name, version string, engine Searcher, symbols Finder, indexer Indexer, projects []project.Project) *Server {
 	slog.Info("creating mcp server", "name", name, "version", version)
 	s := &Server{
-		name:      name,
-		version:   version,
-		engine:    engine,
-		symbols:   symbols,
-		reindexer: reindexer,
-		projects:  projects,
+		name:     name,
+		version:  version,
+		engine:   engine,
+		symbols:  symbols,
+		indexer:  indexer,
+		projects: projects,
 	}
 
 	s.server = mcpServer.NewMCPServer(
@@ -63,6 +75,11 @@ func New(name, version string, engine Searcher, symbols Finder, reindexer Reinde
 	s.registerTools()
 
 	return s
+}
+
+// ReloadProjects updates the project list used for path resolution and list_projects.
+func (s *Server) ReloadProjects(projects []project.Project) {
+	s.projects = projects
 }
 
 // StartHTTP runs the MCP server over Streamable HTTP on the given address.
@@ -118,6 +135,13 @@ func (s *Server) registerTools() {
 	s.server.AddTool(getRecentChangesTool(), mcp.NewTypedToolHandler(s.getRecentChanges))
 	s.server.AddTool(queryDocumentationTool(), mcp.NewTypedToolHandler(s.queryDocumentation))
 	s.server.AddTool(reindexFilesTool(), mcp.NewTypedToolHandler(s.reindexFiles))
+	s.server.AddTool(getIndexStatusTool(), mcp.NewTypedToolHandler(s.getIndexStatus))
+	s.server.AddTool(getIndexJobTool(), mcp.NewTypedToolHandler(s.getIndexJob))
+	s.server.AddTool(rebuildProjectTool(), mcp.NewTypedToolHandler(s.rebuildProject))
+	s.server.AddTool(rebuildIndexTool(), mcp.NewTypedToolHandler(s.rebuildIndex))
+	s.server.AddTool(discoverProjectsTool(), mcp.NewTypedToolHandler(s.discoverProjects))
+	s.server.AddTool(addProjectTool(), mcp.NewTypedToolHandler(s.addProject))
+	s.server.AddTool(removeProjectTool(), mcp.NewTypedToolHandler(s.removeProject))
 }
 
 func searchCodebaseTool() mcp.Tool {
@@ -125,6 +149,7 @@ func searchCodebaseTool() mcp.Tool {
 		mcp.WithDescription("Semantic search over indexed code and documentation"),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Natural language search query")),
 		mcp.WithString("project", mcp.Description("Project name to restrict the search")),
+		mcp.WithString("path", mcp.Description("Absolute or project-relative path prefix to restrict the search")),
 		mcp.WithString("language", mcp.Description("Language filter, e.g. go, python, markdown")),
 		mcp.WithNumber("top_k", mcp.Description("Number of results"), mcp.DefaultNumber(10)),
 		mcp.WithBoolean("include_content", mcp.Description("Include full chunk text"), mcp.DefaultBool(true)),

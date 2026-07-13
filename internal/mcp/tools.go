@@ -17,6 +17,7 @@ import (
 type searchCodebaseArgs struct {
 	Query          string  `json:"query"`
 	Project        string  `json:"project"`
+	Path           string  `json:"path"`
 	Language       string  `json:"language"`
 	TopK           float64 `json:"top_k"`
 	IncludeContent bool    `json:"include_content"`
@@ -50,7 +51,7 @@ type searchResultItem struct {
 }
 
 func (s *Server) searchCodebase(ctx context.Context, request mcp.CallToolRequest, args searchCodebaseArgs) (*mcp.CallToolResult, error) {
-	slog.InfoContext(ctx, "mcp tool call", "tool", "search_codebase", "query", args.Query, "project", args.Project, "language", args.Language)
+	slog.InfoContext(ctx, "mcp tool call", "tool", "search_codebase", "query", args.Query, "project", args.Project, "path", args.Path, "language", args.Language)
 	if args.Query == "" {
 		return mcp.NewToolResultError("query is required"), nil
 	}
@@ -61,6 +62,14 @@ func (s *Server) searchCodebase(ctx context.Context, request mcp.CallToolRequest
 	}
 	if args.Language != "" {
 		filters["language"] = strings.ToLower(args.Language)
+	}
+
+	if args.Path != "" {
+		prefix, err := s.resolvePath(args.Project, args.Path)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		filters["path"] = prefix
 	}
 
 	topK := int(args.TopK)

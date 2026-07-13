@@ -30,7 +30,7 @@ func (s *Server) reindexFiles(ctx context.Context, request mcp.CallToolRequest, 
 	if len(args.Paths) == 0 {
 		return mcp.NewToolResultError("paths is required"), nil
 	}
-	if s.reindexer == nil {
+	if s.indexer == nil {
 		return mcp.NewToolResultError("reindexing is not configured"), nil
 	}
 
@@ -52,7 +52,7 @@ func (s *Server) reindexFiles(ctx context.Context, request mcp.CallToolRequest, 
 		cleanPaths = append(cleanPaths, clean)
 	}
 
-	if err := s.reindexer.ReindexFiles(ctx, cleanPaths); err != nil {
+	if err := s.indexer.ReindexFiles(ctx, cleanPaths); err != nil {
 		slog.ErrorContext(ctx, "reindex_files failed", "paths", cleanPaths, "error", err)
 		return nil, fmt.Errorf("reindex files: %w", err)
 	}
