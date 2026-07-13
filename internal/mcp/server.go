@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpServer "github.com/mark3labs/mcp-go/server"
@@ -45,6 +46,7 @@ type Indexer interface {
 
 // Server wraps the mcp-go server and exposes Gnostis tools.
 type Server struct {
+	mu       sync.RWMutex
 	server   *mcpServer.MCPServer
 	http     *mcpServer.StreamableHTTPServer
 	name     string
@@ -79,6 +81,8 @@ func New(name, version string, engine Searcher, symbols Finder, indexer Indexer,
 
 // ReloadProjects updates the project list used for path resolution and list_projects.
 func (s *Server) ReloadProjects(projects []project.Project) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.projects = projects
 }
 

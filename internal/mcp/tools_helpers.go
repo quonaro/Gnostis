@@ -12,6 +12,12 @@ import (
 )
 
 func (s *Server) isPathAllowed(path string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.isPathAllowedLocked(path)
+}
+
+func (s *Server) isPathAllowedLocked(path string) bool {
 	if path == "" {
 		return false
 	}
@@ -40,6 +46,9 @@ func (s *Server) resolveAbsolutePath(path string) (string, error) {
 }
 
 func (s *Server) resolvePath(project, path string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	var base string
 	if project != "" {
 		for _, p := range s.projects {
@@ -63,7 +72,7 @@ func (s *Server) resolvePath(project, path string) (string, error) {
 	}
 
 	clean := filepath.Clean(path)
-	if !s.isPathAllowed(clean) {
+	if !s.isPathAllowedLocked(clean) {
 		return "", fmt.Errorf("path %q is outside indexed projects", clean)
 	}
 	return clean, nil

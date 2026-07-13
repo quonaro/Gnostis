@@ -79,6 +79,9 @@ func resolveProjects(cfg config.Config) ([]directory.Directory, []project.Projec
 
 // DiscoverProjects scans root and returns projects that are not already configured.
 func (a *App) DiscoverProjects(ctx context.Context, root string, opts discover.Options) (discover.Result, error) {
+	a.rebuildMu.RLock()
+	defer a.rebuildMu.RUnlock()
+
 	existing := make(map[string]bool)
 	for _, p := range a.projects {
 		existing[p.Path] = true
@@ -103,6 +106,9 @@ func (a *App) AddProject(ctx context.Context, path, name string) error {
 		return fmt.Errorf("%s is not a directory", absPath)
 	}
 
+	a.rebuildMu.Lock()
+	defer a.rebuildMu.Unlock()
+
 	for _, p := range a.projects {
 		if p.Path == absPath {
 			return fmt.Errorf("project with path %q already exists", absPath)
@@ -125,11 +131,17 @@ func (a *App) AddProject(ctx context.Context, path, name string) error {
 	if a.mcp != nil {
 		a.mcp.ReloadProjects(a.projects)
 	}
+	if err := a.restartWatcher(ctx); err != nil {
+		return fmt.Errorf("restart watcher: %w", err)
+	}
 	return nil
 }
 
 // RemoveProject removes a project by name and deletes its indexed chunks.
 func (a *App) RemoveProject(ctx context.Context, name string) error {
+	a.rebuildMu.Lock()
+	defer a.rebuildMu.Unlock()
+
 	idx := -1
 	for i, p := range a.projects {
 		if p.Name == name {
@@ -172,6 +184,9 @@ func (a *App) RemoveProject(ctx context.Context, name string) error {
 	}
 	if a.mcp != nil {
 		a.mcp.ReloadProjects(a.projects)
+	}
+	if err := a.restartWatcher(ctx); err != nil {
+		return fmt.Errorf("restart watcher: %w", err)
 	}
 	return nil
 }

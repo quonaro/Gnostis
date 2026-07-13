@@ -21,27 +21,41 @@ func (a *App) watchConfig(ctx context.Context) error {
 
 	cfgDir := filepath.Dir(a.ConfigPath)
 
-	watcher, err := fsnotify.NewWatcher()
+	fw, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("create config watcher: %w", err)
 	}
-	defer func() { _ = watcher.Close() }()
+	defer func() { _ = fw.Close() }()
 
-	if err := watcher.Add(cfgDir); err != nil {
+	if err := fw.Add(cfgDir); err != nil {
 		return fmt.Errorf("watch config directory %s: %w", cfgDir, err)
 	}
 
 	slog.InfoContext(ctx, "watching config file", "path", a.ConfigPath)
 
-	debounce := time.NewTimer(0)
-	<-debounce.C
-	defer debounce.Stop()
+	var debounce *time.Timer
+	reset := func() {
+		if debounce != nil {
+			if !debounce.Stop() {
+				select {
+				case <-debounce.C:
+				default:
+				}
+			}
+		}
+		debounce = time.NewTimer(200 * time.Millisecond)
+	}
+	defer func() {
+		if debounce != nil {
+			debounce.Stop()
+		}
+	}()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case event, ok := <-watcher.Events:
+		case event, ok := <-fw.Events:
 			if !ok {
 				return nil
 			}
@@ -51,21 +65,63 @@ func (a *App) watchConfig(ctx context.Context) error {
 			if event.Op&fsnotify.Write == 0 && event.Op&fsnotify.Create == 0 && event.Op&fsnotify.Rename == 0 {
 				continue
 			}
-			debounce.Stop()
-			debounce = time.NewTimer(200 * time.Millisecond)
-		case <-debounce.C:
+			reset()
+		case <-func() <-chan time.Time {
+			if debounce == nil {
+				return nil
+			}
+			return debounce.C
+		}():
 			if err := a.ReloadConfig(ctx); err != nil {
 				slog.ErrorContext(ctx, "reload config", "error", err)
 			} else {
 				slog.InfoContext(ctx, "config reloaded")
 			}
-		case err, ok := <-watcher.Errors:
+			debounce = nil
+		case err, ok := <-fw.Errors:
 			if !ok {
 				return nil
 			}
 			slog.ErrorContext(ctx, "config watcher error", "error", err)
 		}
 	}
+}
+
+// newWatcher creates a fresh filesystem watcher with the current directory list.
+func (a *App) newWatcher() *watcher.Watcher {
+	return watcher.New(a.dirs, func(path string) {
+		a.rebuildMu.Lock()
+		defer a.rebuildMu.Unlock()
+
+		if err := reindexFile(context.Background(), path, a.dirs, a.projects, a.cfg, a.store, a.symbolIndex, a.provider, a.embeddingCache, a.indexingStats); err != nil {
+			slog.Error("reindex file", "path", path, "error", err)
+			return
+		}
+		if err := a.symbolIndex.Save(); err != nil {
+			slog.Error("save symbol index", "error", err)
+		}
+	})
+}
+
+// restartWatcher stops the current watcher and starts a new one with the current
+// directory list. It must be called with rebuildMu held.
+func (a *App) restartWatcher(ctx context.Context) error {
+	if !a.watcherStarted {
+		a.watcher = a.newWatcher()
+		return nil
+	}
+
+	if a.watcher != nil {
+		if err := a.watcher.Stop(); err != nil {
+			slog.ErrorContext(ctx, "stop watcher", "error", err)
+		}
+	}
+
+	a.watcher = a.newWatcher()
+	if err := a.watcher.Start(); err != nil {
+		return fmt.Errorf("start watcher: %w", err)
+	}
+	return nil
 }
 
 // ReloadConfig reloads the configuration from disk and updates the project list.
@@ -101,10 +157,11 @@ func (a *App) ReloadConfig(ctx context.Context) error {
 		return fmt.Errorf("resolve projects: %w", err)
 	}
 
-	if a.watcher != nil {
-		if err := a.watcher.Stop(); err != nil {
-			slog.ErrorContext(ctx, "stop watcher", "error", err)
-		}
+	a.rebuildMu.Lock()
+	defer a.rebuildMu.Unlock()
+
+	if err := a.restartWatcher(ctx); err != nil {
+		return fmt.Errorf("restart watcher: %w", err)
 	}
 
 	a.cfg = cfg
@@ -113,21 +170,6 @@ func (a *App) ReloadConfig(ctx context.Context) error {
 
 	if a.mcp != nil {
 		a.mcp.ReloadProjects(projects)
-	}
-
-	a.watcher = watcher.New(dirs, func(path string) {
-		if err := reindexFile(context.Background(), path, a.dirs, a.projects, a.cfg, a.store, a.symbolIndex, a.provider, a.embeddingCache, a.indexingStats); err != nil {
-			slog.Error("reindex file", "path", path, "error", err)
-			return
-		}
-		if err := a.symbolIndex.Save(); err != nil {
-			slog.Error("save symbol index", "error", err)
-		}
-	})
-	if a.watcherStarted {
-		if err := a.watcher.Start(); err != nil {
-			return fmt.Errorf("restart watcher: %w", err)
-		}
 	}
 
 	return nil

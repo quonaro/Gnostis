@@ -53,11 +53,19 @@ func (a *App) StartRebuildProject(ctx context.Context, name string) (string, err
 
 // RebuildIndex removes the existing index and rebuilds everything.
 func (a *App) RebuildIndex(ctx context.Context) error {
-	if a.watcher != nil {
+	wasStarted := a.watcherStarted
+	if a.watcher != nil && wasStarted {
 		if err := a.watcher.Stop(); err != nil {
 			return fmt.Errorf("stop watcher: %w", err)
 		}
 	}
+	defer func() {
+		if a.watcher != nil && wasStarted {
+			if err := a.watcher.Start(); err != nil {
+				slog.ErrorContext(ctx, "restart watcher", "error", err)
+			}
+		}
+	}()
 
 	if err := a.deleteChunksByPrefix(ctx, ""); err != nil {
 		_ = a.progress.Fail(err)
@@ -67,12 +75,6 @@ func (a *App) RebuildIndex(ctx context.Context) error {
 	if err := a.initialIndex(ctx); err != nil {
 		_ = a.progress.Fail(err)
 		return fmt.Errorf("initial index: %w", err)
-	}
-
-	if a.watcher != nil {
-		if err := a.watcher.Start(); err != nil {
-			return fmt.Errorf("restart watcher: %w", err)
-		}
 	}
 
 	slog.InfoContext(ctx, "full rebuild complete", "chunks", a.store.Count())
@@ -138,14 +140,8 @@ func (a *App) deleteChunksByPrefix(ctx context.Context, prefix string) error {
 }
 
 func isUnderPath(path, root string) bool {
-	if root == string(filepath.Separator) {
-		return true
-	}
 	if root == "" {
-		if path == "" {
-			return false
-		}
-		return path[0] == filepath.Separator
+		return path != ""
 	}
 	if !strings.HasPrefix(path, root) {
 		return false
@@ -189,6 +185,9 @@ func (a *App) rebuildFile(ctx context.Context, filePath string) error {
 // ReindexFiles reindexes the given file or directory paths and persists the symbol index.
 // Paths outside configured directories are indexed with global defaults.
 func (a *App) ReindexFiles(ctx context.Context, paths []string) error {
+	a.rebuildMu.Lock()
+	defer a.rebuildMu.Unlock()
+
 	for _, raw := range paths {
 		path, err := filepath.Abs(raw)
 		if err != nil {
@@ -213,33 +212,6 @@ func (a *App) ReindexFiles(ctx context.Context, paths []string) error {
 	}
 	if err := a.symbolIndex.Save(); err != nil {
 		return fmt.Errorf("save symbol index: %w", err)
-	}
-	return nil
-}
-
-// RebuildPaths rebuilds the index for the given paths. Configured project names are
-// rebuilt as projects; files and directories are reindexed directly, even when they
-// are not part of the configuration.
-func (a *App) RebuildPaths(ctx context.Context, paths []string) error {
-	for _, raw := range paths {
-		matched := false
-		for _, p := range a.projects {
-			if p.Name != raw {
-				continue
-			}
-			matched = true
-			if err := a.RebuildProject(ctx, p.Name); err != nil {
-				return fmt.Errorf("rebuild project %s: %w", p.Name, err)
-			}
-			break
-		}
-		if matched {
-			continue
-		}
-
-		if err := a.ReindexFiles(ctx, []string{raw}); err != nil {
-			return fmt.Errorf("rebuild path %s: %w", raw, err)
-		}
 	}
 	return nil
 }

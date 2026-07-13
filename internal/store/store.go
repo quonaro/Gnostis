@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	chromem "github.com/philippgille/chromem-go"
 
@@ -34,7 +35,9 @@ type VectorStore interface {
 }
 
 // Store persists chunks in chromem-go and tracks file hashes for incremental indexing.
+// Store methods are safe for concurrent use.
 type Store struct {
+	mu       sync.RWMutex
 	col      *chromem.Collection
 	hashFile string
 	dimFile  string
@@ -92,6 +95,10 @@ func (s *Store) AddChunks(ctx context.Context, chunks []chunker.Chunk, embedding
 	if err != nil {
 		return fmt.Errorf("validate embeddings: %w", err)
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.dim != 0 && s.dim != dim {
 		return fmt.Errorf("embedding dimension mismatch: expected %d, got %d; clear the data directory and restart after changing the embedding model", s.dim, dim)
 	}
@@ -153,6 +160,10 @@ func (s *Store) DeleteByPaths(ctx context.Context, paths []string) error {
 	if len(paths) == 0 {
 		return nil
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	for _, path := range paths {
 		if err := s.col.Delete(ctx, map[string]string{"path": path}, nil); err != nil {
 			return fmt.Errorf("delete path %s: %w", path, err)
@@ -167,19 +178,21 @@ func (s *Store) DeleteByPaths(ctx context.Context, paths []string) error {
 
 // Query searches the vector store with a precomputed embedding.
 func (s *Store) Query(ctx context.Context, embedding []float32, n int, filters map[string]string) ([]chromem.Result, error) {
+	s.mu.RLock()
 	count := s.col.Count()
 	if count == 0 {
+		s.mu.RUnlock()
 		return nil, nil
 	}
 	if n > count {
 		n = count
 	}
-
 	if s.dim != 0 && len(embedding) != s.dim {
+		s.mu.RUnlock()
 		return nil, fmt.Errorf("embedding dimension mismatch: query has %d dimensions but the store was indexed with %d dimensions; clear the data directory and restart after changing the embedding model", len(embedding), s.dim)
 	}
-
 	results, err := s.col.QueryEmbedding(ctx, embedding, n, filters, nil)
+	s.mu.RUnlock()
 	if err != nil {
 		if strings.Contains(err.Error(), "vectors must have the same length") {
 			return nil, fmt.Errorf("embedding dimension mismatch: query vector length differs from stored vectors; clear the data directory and restart after changing the embedding model")
@@ -188,8 +201,12 @@ func (s *Store) Query(ctx context.Context, embedding []float32, n int, filters m
 	}
 
 	if s.dim == 0 && len(results) > 0 {
-		s.dim = len(embedding)
-		_ = s.saveDim()
+		s.mu.Lock()
+		if s.dim == 0 {
+			s.dim = len(embedding)
+			_ = s.saveDim()
+		}
+		s.mu.Unlock()
 	}
 
 	return results, nil
@@ -197,6 +214,8 @@ func (s *Store) Query(ctx context.Context, embedding []float32, n int, filters m
 
 // Count returns the number of stored chunks.
 func (s *Store) Count() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.col.Count()
 }
 
@@ -205,6 +224,10 @@ func (s *Store) CountByProject(ctx context.Context, projectID string) (int, erro
 	if projectID == "" {
 		return 0, nil
 	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	if s.dim == 0 || s.col.Count() == 0 {
 		return 0, nil
 	}
@@ -235,11 +258,15 @@ func chunkMetadata(ch chunker.Chunk) map[string]string {
 
 // GetFileHash returns the stored hash for a file path.
 func (s *Store) GetFileHash(_ context.Context, path string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.hashes[path], nil
 }
 
 // Paths returns all file paths currently tracked by the store.
 func (s *Store) Paths() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	paths := make([]string, 0, len(s.hashes))
 	for p := range s.hashes {
 		paths = append(paths, p)

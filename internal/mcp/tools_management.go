@@ -92,7 +92,7 @@ func (s *Server) getIndexJob(ctx context.Context, request mcp.CallToolRequest, a
 	if err != nil {
 		return nil, fmt.Errorf("load progress: %w", err)
 	}
-	if pstate.JobID != "" && pstate.JobID != args.JobID {
+	if pstate.JobID != args.JobID {
 		return mcp.NewToolResultError(fmt.Sprintf("job %q not found", args.JobID)), nil
 	}
 

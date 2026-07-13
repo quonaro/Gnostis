@@ -51,7 +51,7 @@ type App struct {
 	jobMu          sync.Mutex
 	jobRunning     bool
 	currentJobID   string
-	rebuildMu      sync.Mutex
+	rebuildMu      sync.RWMutex
 	watcherStarted bool
 }
 
@@ -104,16 +104,7 @@ func New(cfg config.Config) (*App, error) {
 	mcpSrv := mcpServer.New(cfg.MCP.Name, cfg.MCP.Version, engine, symbolIndex, a, projects)
 	a.mcp = mcpSrv
 
-	w := watcher.New(dirs, func(path string) {
-		if err := reindexFile(context.Background(), path, dirs, projects, a.cfg, a.store, a.symbolIndex, a.provider, a.embeddingCache, a.indexingStats); err != nil {
-			slog.Error("reindex file", "path", path, "error", err)
-			return
-		}
-		if err := a.symbolIndex.Save(); err != nil {
-			slog.Error("save symbol index", "error", err)
-		}
-	})
-	a.watcher = w
+	a.watcher = a.newWatcher()
 
 	return a, nil
 }
@@ -146,17 +137,21 @@ func (a *App) Run(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		a.rebuildMu.Lock()
 		if err := a.initialIndex(ctx); err != nil {
+			a.rebuildMu.Unlock()
 			errCh <- fmt.Errorf("initial index: %w", err)
 			cancel()
 			return
 		}
 		if err := a.watcher.Start(); err != nil {
+			a.rebuildMu.Unlock()
 			errCh <- fmt.Errorf("start watcher: %w", err)
 			cancel()
 			return
 		}
 		a.watcherStarted = true
+		a.rebuildMu.Unlock()
 		<-ctx.Done()
 		_ = a.watcher.Stop()
 	}()
@@ -227,5 +222,7 @@ func (a *App) initialIndex(ctx context.Context) error {
 
 // InitialIndex performs the first-time indexing of all configured directories.
 func (a *App) InitialIndex(ctx context.Context) error {
+	a.rebuildMu.Lock()
+	defer a.rebuildMu.Unlock()
 	return a.initialIndex(ctx)
 }

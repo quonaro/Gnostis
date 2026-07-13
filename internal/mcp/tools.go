@@ -260,10 +260,12 @@ func (s *Server) listProjects(ctx context.Context, request mcp.CallToolRequest, 
 		Path string `json:"path"`
 	}
 
+	s.mu.RLock()
 	items := make([]projectItem, len(s.projects))
 	for i, p := range s.projects {
 		items[i] = projectItem{Name: p.Name, Path: p.Path}
 	}
+	s.mu.RUnlock()
 
 	data, err := json.Marshal(items)
 	if err != nil {
