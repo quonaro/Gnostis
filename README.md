@@ -7,7 +7,7 @@ A local "second brain" for developers. Gnostis indexes your projects with tree-s
 - Watches configured directories and incrementally indexes changed files.
 - Splits code into symbol-level chunks (functions, types, methods, classes).
 - Stores embeddings locally using `chromem-go`.
-- Supports Ollama, OpenAI-compatible APIs, and **local ONNX embedding models** (no external server required after the first model download).
+- Supports Ollama and OpenAI-compatible APIs for embeddings.
 - Maintains a dedicated symbol index for fast exact symbol lookups.
 - Answers semantic search queries from Cursor/Windsurf via MCP tools including `grep`, `list_files`, `directory_tree`, `get_recent_changes`, and `query_documentation`.
 

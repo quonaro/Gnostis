@@ -103,14 +103,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Embeddings.URL = defaultURL
 	}
 	if cfg.Embeddings.Model == "" {
-		if strings.ToLower(cfg.Embeddings.Provider) == "onnx" {
-			cfg.Embeddings.Model = defaultONNXModel
-		} else {
-			cfg.Embeddings.Model = defaultModel
-		}
-	}
-	if cfg.Embeddings.ModelPath == "" && strings.ToLower(cfg.Embeddings.Provider) == "onnx" {
-		cfg.Embeddings.ModelPath = filepath.Join(cfg.DataDir, defaultModelsSubdir, sanitizeModelName(cfg.Embeddings.Model))
+		cfg.Embeddings.Model = defaultModel
 	}
 	if cfg.Embeddings.BatchSize == 0 {
 		cfg.Embeddings.BatchSize = defaultBatchSize
@@ -162,7 +155,7 @@ func validate(cfg *Config) error {
 	}
 
 	provider := strings.ToLower(cfg.Embeddings.Provider)
-	if provider != "ollama" && provider != "openai" && provider != "onnx" {
+	if provider != "ollama" && provider != "openai" {
 		return fmt.Errorf("unsupported embeddings provider: %s", cfg.Embeddings.Provider)
 	}
 
@@ -193,9 +186,4 @@ func validate(cfg *Config) error {
 	}
 
 	return nil
-}
-
-// sanitizeModelName converts a Hugging Face model identifier into a safe directory name.
-func sanitizeModelName(name string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(name, "/", "_"), " ", "_")
 }

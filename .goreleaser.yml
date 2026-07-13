@@ -16,8 +16,6 @@ builds:
   goarch:
   - amd64
   - arm64
-  tags:
-  - no_onnx
   overrides:
   - goos: linux
     goarch: amd64
@@ -50,29 +48,6 @@ builds:
     - CC=oa64-clang
     - CXX=oa64-clang++
 
-- id: gnostis-onnx
-  binary: gnostis
-  main: ./cmd/gnostis
-  env:
-  - CGO_ENABLED=1
-  - GOTOOLCHAIN=auto
-  goos:
-  - linux
-  goarch:
-  - amd64
-  - arm64
-  overrides:
-  - goos: linux
-    goarch: amd64
-    env:
-    - CC=x86_64-linux-gnu-gcc
-    - CXX=x86_64-linux-gnu-g++
-  - goos: linux
-    goarch: arm64
-    env:
-    - CC=aarch64-linux-gnu-gcc
-    - CXX=aarch64-linux-gnu-g++
-
 archives:
 - id: gnostis
   ids:
@@ -85,14 +60,6 @@ archives:
   - goos: windows
     formats:
     - zip
-
-- id: gnostis-onnx
-  ids:
-  - gnostis-onnx
-  name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}-onnx"
-  formats:
-  - tar.gz
-  files: []
 
 checksum:
   name_template: checksums.txt

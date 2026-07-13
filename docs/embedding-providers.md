@@ -41,25 +41,6 @@ embeddings:
   api_key: ${OPENAI_API_KEY}
 ```
 
-## ONNX (local, no external server)
-
-Runs a Hugging Face ONNX model directly using the local ONNX Runtime. This removes the dependency on Ollama or a cloud API after the first model download.
-
-```yaml
-embeddings:
-  provider: onnx
-  model: sentence-transformers/all-MiniLM-L6-v2
-  model_path: ${HOME}/.gnostis/models/all-MiniLM-L6-v2
-  runtime_path: /usr/lib/libonnxruntime.so
-  batch_size: 32
-```
-
-- `model` is a Hugging Face repository that exposes `onnx/model.onnx` and `tokenizer.json`.
-- `model_path` is the directory where the model files are cached (defaults to `${data_dir}/models/{sanitized_model}`).
-- `runtime_path` is the path to the ONNX Runtime shared library. If omitted, the `ONNXRUNTIME_LIB_PATH` environment variable is used.
-
-On first run Gnostis downloads the model and tokenizer from Hugging Face. The default model (`all-MiniLM-L6-v2`) produces 384-dimensional vectors. Changing the model requires a full index rebuild because the vector dimensions differ.
-
 ## Model recommendations
 
 | Model                           | Provider | Russian   | Code | Speed  |

@@ -12,13 +12,11 @@ type Config struct {
 
 // Embeddings configures the embedding provider.
 type Embeddings struct {
-	Provider    string `yaml:"provider"`
-	URL         string `yaml:"url"`
-	Model       string `yaml:"model"`
-	ModelPath   string `yaml:"model_path"`
-	RuntimePath string `yaml:"runtime_path"`
-	APIKey      string `yaml:"api_key"`
-	BatchSize   int    `yaml:"batch_size"`
+	Provider  string `yaml:"provider"`
+	URL       string `yaml:"url"`
+	Model     string `yaml:"model"`
+	APIKey    string `yaml:"api_key"`
+	BatchSize int    `yaml:"batch_size"`
 }
 
 // Index configures global indexing defaults.
@@ -46,16 +44,14 @@ type MCP struct {
 }
 
 const (
-	defaultLogLevel     = "info"
-	defaultDataDir      = "${HOME}/.gnostis/data"
-	defaultConfigPath   = "${HOME}/.gnostis/config.yaml"
-	defaultProvider     = "ollama"
-	defaultURL          = "http://localhost:11434/v1"
-	defaultModel        = "nomic-embed-text"
-	defaultONNXModel    = "sentence-transformers/all-MiniLM-L6-v2"
-	defaultBatchSize    = 32
-	defaultServerName   = "gnostis"
-	defaultVersion      = ""
-	defaultAddress      = "127.0.0.1:8080"
-	defaultModelsSubdir = "models"
+	defaultLogLevel   = "info"
+	defaultDataDir    = "${HOME}/.gnostis/data"
+	defaultConfigPath = "${HOME}/.gnostis/config.yaml"
+	defaultProvider   = "ollama"
+	defaultURL        = "http://localhost:11434/v1"
+	defaultModel      = "nomic-embed-text"
+	defaultBatchSize  = 32
+	defaultServerName = "gnostis"
+	defaultVersion    = ""
+	defaultAddress    = "127.0.0.1:8080"
 )
