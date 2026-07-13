@@ -28,6 +28,17 @@ func (s *Server) isPathAllowed(path string) bool {
 	return false
 }
 
+func (s *Server) resolveAbsolutePath(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	clean := filepath.Clean(path)
+	if !filepath.IsAbs(clean) {
+		return "", fmt.Errorf("path must be absolute: %s", clean)
+	}
+	return clean, nil
+}
+
 func (s *Server) resolvePath(project, path string) (string, error) {
 	var base string
 	if project != "" {

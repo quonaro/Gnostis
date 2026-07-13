@@ -7,10 +7,10 @@ status:
   native: true
 
 rebuild:
-  desc: Rebuild the full index or a specific project
+  desc: Rebuild the full index, a project, or specific files and directories
   native: true
   args:
-  - "project:str?"
+  - "...paths:str"
   - "detach|d:bool=false"
 
 validate:

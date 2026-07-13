@@ -99,7 +99,7 @@ func New(cfg config.Config) (*App, error) {
 	a.mcp = mcpSrv
 
 	w := watcher.New(dirs, func(path string) {
-		if err := reindexFile(context.Background(), path, dirs, projects, a.store, a.symbolIndex, a.provider, a.embeddingCache); err != nil {
+		if err := reindexFile(context.Background(), path, dirs, projects, a.cfg, a.store, a.symbolIndex, a.provider, a.embeddingCache); err != nil {
 			slog.Error("reindex file", "path", path, "error", err)
 			return
 		}
@@ -225,20 +225,17 @@ func (a *App) RebuildProject(ctx context.Context, name string) error {
 
 		slog.InfoContext(ctx, "rebuilding project", "project", p.Name, "path", a.dirs[i].Path)
 
-		var toDelete []string
-		for _, path := range a.store.Paths() {
-			if strings.HasPrefix(path, a.dirs[i].Path) {
-				toDelete = append(toDelete, path)
-				a.symbolIndex.RemoveByPath(path)
-			}
+		if err := a.deleteChunksByPrefix(ctx, a.dirs[i].Path); err != nil {
+			_ = a.progress.Fail(err)
+			return fmt.Errorf("delete project chunks: %w", err)
 		}
-		_ = a.store.DeleteByPaths(ctx, toDelete)
 
 		if err := indexDirectory(ctx, a.ProgressWriter, a.dirs[i], p, a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache, a.progress, a.indexingStats); err != nil {
 			return fmt.Errorf("index %s: %w", a.dirs[i].Path, err)
 		}
 
 		if err := a.symbolIndex.Save(); err != nil {
+			_ = a.progress.Fail(err)
 			return fmt.Errorf("save symbol index: %w", err)
 		}
 
@@ -249,15 +246,119 @@ func (a *App) RebuildProject(ctx context.Context, name string) error {
 	return fmt.Errorf("project %q not found", name)
 }
 
-// ReindexFiles reindexes the given file paths and persists the symbol index.
+// deleteChunksByPrefix removes all indexed chunks whose path is under prefix.
+func (a *App) deleteChunksByPrefix(ctx context.Context, prefix string) error {
+	var toDelete []string
+	for _, path := range a.store.Paths() {
+		if !isUnderPath(path, prefix) {
+			continue
+		}
+		toDelete = append(toDelete, path)
+		a.symbolIndex.RemoveByPath(path)
+	}
+	if err := a.store.DeleteByPaths(ctx, toDelete); err != nil {
+		return fmt.Errorf("delete chunks: %w", err)
+	}
+	return nil
+}
+
+func isUnderPath(path, root string) bool {
+	if root == string(filepath.Separator) {
+		return true
+	}
+	if !strings.HasPrefix(path, root) {
+		return false
+	}
+	if len(path) == len(root) {
+		return true
+	}
+	return path[len(root)] == filepath.Separator
+}
+
+// rebuildDirectory removes existing chunks under dirPath and reindexes the directory.
+func (a *App) rebuildDirectory(ctx context.Context, dirPath string) error {
+	slog.InfoContext(ctx, "rebuilding directory", "path", dirPath)
+
+	if err := a.deleteChunksByPrefix(ctx, dirPath); err != nil {
+		return fmt.Errorf("delete directory chunks: %w", err)
+	}
+
+	dir := directory.FromConfig(a.cfg.Index, config.Directory{Path: dirPath, Name: filepath.Base(dirPath)})
+	proj := project.New(filepath.Base(dirPath), dirPath)
+
+	if err := indexDirectory(ctx, a.ProgressWriter, dir, proj, a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache, nil, nil); err != nil {
+		return fmt.Errorf("index directory: %w", err)
+	}
+
+	slog.InfoContext(ctx, "directory rebuild complete", "path", dirPath, "chunks", a.store.Count())
+	return nil
+}
+
+// rebuildFile removes existing chunks for a single file and reindexes it.
+func (a *App) rebuildFile(ctx context.Context, filePath string) error {
+	_ = a.store.DeleteByPath(ctx, filePath)
+	a.symbolIndex.RemoveByPath(filePath)
+
+	if err := reindexFile(ctx, filePath, a.dirs, a.projects, a.cfg, a.store, a.symbolIndex, a.provider, a.embeddingCache); err != nil {
+		return fmt.Errorf("reindex file: %w", err)
+	}
+	return nil
+}
+
+// ReindexFiles reindexes the given file or directory paths and persists the symbol index.
+// Paths outside configured directories are indexed with global defaults.
 func (a *App) ReindexFiles(ctx context.Context, paths []string) error {
-	for _, path := range paths {
-		if err := reindexFile(ctx, path, a.dirs, a.projects, a.store, a.symbolIndex, a.provider, a.embeddingCache); err != nil {
-			return fmt.Errorf("reindex %s: %w", path, err)
+	for _, raw := range paths {
+		path, err := filepath.Abs(raw)
+		if err != nil {
+			return fmt.Errorf("resolve path %q: %w", raw, err)
+		}
+
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", path, err)
+		}
+
+		if info.IsDir() {
+			if err := a.rebuildDirectory(ctx, path); err != nil {
+				return fmt.Errorf("reindex directory %s: %w", path, err)
+			}
+			continue
+		}
+
+		if err := a.rebuildFile(ctx, path); err != nil {
+			return fmt.Errorf("reindex file %s: %w", path, err)
 		}
 	}
 	if err := a.symbolIndex.Save(); err != nil {
 		return fmt.Errorf("save symbol index: %w", err)
+	}
+	return nil
+}
+
+// RebuildPaths rebuilds the index for the given paths. Configured project names are
+// rebuilt as projects; files and directories are reindexed directly, even when they
+// are not part of the configuration.
+func (a *App) RebuildPaths(ctx context.Context, paths []string) error {
+	for _, raw := range paths {
+		matched := false
+		for _, p := range a.projects {
+			if p.Name != raw {
+				continue
+			}
+			matched = true
+			if err := a.RebuildProject(ctx, p.Name); err != nil {
+				return fmt.Errorf("rebuild project %s: %w", p.Name, err)
+			}
+			break
+		}
+		if matched {
+			continue
+		}
+
+		if err := a.ReindexFiles(ctx, []string{raw}); err != nil {
+			return fmt.Errorf("rebuild path %s: %w", raw, err)
+		}
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -97,7 +98,7 @@ func indexRebuildHandler(_ context.Context, nctx engine.NativeContext) error {
 	}
 	defer restore()
 
-	project := nctx.Args["project"]
+	paths := strings.Fields(nctx.Args["paths"])
 	detach := nctx.Args["detach"] == "true"
 
 	if detach {
@@ -108,7 +109,7 @@ func indexRebuildHandler(_ context.Context, nctx engine.NativeContext) error {
 		if running {
 			return fmt.Errorf("a rebuild is already running; check status with 'gnostis status'")
 		}
-		pid, err := spawnDetachedRebuild(cfg.DataDir, project)
+		pid, err := spawnDetachedRebuild(cfg.DataDir, paths...)
 		if err != nil {
 			return fmt.Errorf("spawn detached rebuild: %w", err)
 		}
@@ -125,7 +126,7 @@ func indexRebuildHandler(_ context.Context, nctx engine.NativeContext) error {
 		return fmt.Errorf("a rebuild is already running; use -d to run in background or check status with 'gnostis status'")
 	}
 
-	if project == "" {
+	if len(paths) == 0 {
 		if isInteractive() && !confirm(nctx.Stdout, "This will delete the existing index and rebuild it. Continue?") {
 			_, _ = fmt.Fprintln(nctx.Stdout, "cancelled")
 			return nil
@@ -144,7 +145,7 @@ func indexRebuildHandler(_ context.Context, nctx engine.NativeContext) error {
 		application.ProgressWriter = f
 	}
 
-	if project == "" {
+	if len(paths) == 0 {
 		if err := application.InitialIndex(context.Background()); err != nil {
 			application.FailProgress(err)
 			return fmt.Errorf("rebuild index: %w", err)
@@ -154,17 +155,11 @@ func indexRebuildHandler(_ context.Context, nctx engine.NativeContext) error {
 		return nil
 	}
 
-	if isInteractive() && !confirm(nctx.Stdout, fmt.Sprintf("This will delete and rebuild the index for project %q. Continue?", project)) {
-		_, _ = fmt.Fprintln(nctx.Stdout, "cancelled")
-		return nil
+	if err := application.RebuildPaths(context.Background(), paths); err != nil {
+		return fmt.Errorf("rebuild paths: %w", err)
 	}
 
-	if err := application.RebuildProject(context.Background(), project); err != nil {
-		application.FailProgress(err)
-		return fmt.Errorf("rebuild project: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(nctx.Stdout, "project %q rebuilt\n", project)
+	_, _ = fmt.Fprintf(nctx.Stdout, "rebuilt %d path(s)\n", len(paths))
 	return nil
 }
 
@@ -198,7 +193,7 @@ func isRebuildRunning(dataDir string) (bool, error) {
 	return true, nil
 }
 
-func spawnDetachedRebuild(dataDir, project string) (int, error) {
+func spawnDetachedRebuild(dataDir string, paths ...string) (int, error) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return 0, fmt.Errorf("create data dir: %w", err)
 	}
@@ -210,10 +205,7 @@ func spawnDetachedRebuild(dataDir, project string) (int, error) {
 	}
 	defer func() { _ = logFile.Close() }()
 
-	args := []string{"rebuild"}
-	if project != "" {
-		args = append(args, project)
-	}
+	args := append([]string{"rebuild"}, paths...)
 
 	cmd := exec.Command(os.Args[0], args...)
 	cmd.Stdout = logFile

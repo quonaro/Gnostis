@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/quonaro/gnostis/internal/chunker"
+	"github.com/quonaro/gnostis/internal/config"
 	"github.com/quonaro/gnostis/internal/directory"
 	"github.com/quonaro/gnostis/internal/embeddings"
 	"github.com/quonaro/gnostis/internal/indexer"
@@ -189,7 +190,7 @@ func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunk
 	return changed, nil
 }
 
-func reindexFile(ctx context.Context, absPath string, dirs []directory.Directory, projects []project.Project, st store.VectorStore, sym *symbol.Index, provider embeddings.Provider, cache map[string][]float32) error {
+func reindexFile(ctx context.Context, absPath string, dirs []directory.Directory, projects []project.Project, cfg config.Config, st store.VectorStore, sym *symbol.Index, provider embeddings.Provider, cache map[string][]float32) error {
 	if len(dirs) != len(projects) {
 		return fmt.Errorf("directory and project count mismatch")
 	}
@@ -198,61 +199,69 @@ func reindexFile(ctx context.Context, absPath string, dirs []directory.Directory
 		if !strings.HasPrefix(absPath, dir.Path) {
 			continue
 		}
-
-		rel, err := filepath.Rel(dir.Path, absPath)
-		if err != nil {
-			return fmt.Errorf("relative path: %w", err)
-		}
-
-		info, err := os.Stat(absPath)
-		if err != nil {
-			_ = st.DeleteByPath(ctx, absPath)
-			sym.RemoveByPath(absPath)
-			return nil
-		}
-
-		if info.IsDir() || !dir.ShouldIndex(rel, info.Size()) {
-			_ = st.DeleteByPath(ctx, absPath)
-			sym.RemoveByPath(absPath)
-			return nil
-		}
-
-		slog.InfoContext(ctx, "reindexing file", "path", absPath, "project", projects[i].Name)
-
-		_ = st.DeleteByPath(ctx, absPath)
-		sym.RemoveByPath(absPath)
-
-		content, err := os.ReadFile(absPath)
-		if err != nil {
-			return fmt.Errorf("read file: %w", err)
-		}
-
-		f := indexer.FileInfo{
-			ProjectID: projects[i].ID,
-			Path:      absPath,
-			RelPath:   rel,
-			Content:   string(content),
-			ModTime:   info.ModTime(),
-		}
-
-		ch := chunker.New()
-		chunks, err := ch.ChunkFile(ctx, f)
-		if err != nil {
-			return fmt.Errorf("chunk file: %w", err)
-		}
-		if len(chunks) == 0 {
-			return nil
-		}
-
-		sym.AddChunks(chunksToSymbolChunks(chunks))
-
-		vectors, err := embedChunks(ctx, provider, chunks, cache, nil)
-		if err != nil {
-			return fmt.Errorf("embed chunks: %w", err)
-		}
-
-		return st.AddChunks(ctx, chunks, vectors)
+		return reindexFileUnder(ctx, absPath, dir, projects[i], st, sym, provider, cache)
 	}
 
-	return nil
+	// Path is not under any configured directory. Index it under a synthetic
+	// directory rooted at the file's parent so global rules still apply.
+	parent := filepath.Dir(absPath)
+	dir := directory.FromConfig(cfg.Index, config.Directory{Path: parent, Name: filepath.Base(parent)})
+	proj := project.New(filepath.Base(parent), parent)
+	return reindexFileUnder(ctx, absPath, dir, proj, st, sym, provider, cache)
+}
+
+func reindexFileUnder(ctx context.Context, absPath string, dir directory.Directory, proj project.Project, st store.VectorStore, sym *symbol.Index, provider embeddings.Provider, cache map[string][]float32) error {
+	rel, err := filepath.Rel(dir.Path, absPath)
+	if err != nil {
+		return fmt.Errorf("relative path: %w", err)
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		_ = st.DeleteByPath(ctx, absPath)
+		sym.RemoveByPath(absPath)
+		return nil
+	}
+
+	if info.IsDir() || !dir.ShouldIndex(rel, info.Size()) {
+		_ = st.DeleteByPath(ctx, absPath)
+		sym.RemoveByPath(absPath)
+		return nil
+	}
+
+	slog.InfoContext(ctx, "reindexing file", "path", absPath, "project", proj.Name)
+
+	_ = st.DeleteByPath(ctx, absPath)
+	sym.RemoveByPath(absPath)
+
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		return fmt.Errorf("read file: %w", err)
+	}
+
+	f := indexer.FileInfo{
+		ProjectID: proj.ID,
+		Path:      absPath,
+		RelPath:   rel,
+		Content:   string(content),
+		ModTime:   info.ModTime(),
+	}
+
+	ch := chunker.New()
+	chunks, err := ch.ChunkFile(ctx, f)
+	if err != nil {
+		return fmt.Errorf("chunk file: %w", err)
+	}
+	if len(chunks) == 0 {
+		return nil
+	}
+
+	sym.AddChunks(chunksToSymbolChunks(chunks))
+
+	vectors, err := embedChunks(ctx, provider, chunks, cache, nil)
+	if err != nil {
+		return fmt.Errorf("embed chunks: %w", err)
+	}
+
+	return st.AddChunks(ctx, chunks, vectors)
 }

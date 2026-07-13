@@ -20,8 +20,8 @@ type reindexFilesResult struct {
 
 func reindexFilesTool() mcp.Tool {
 	return mcp.NewTool("reindex_files",
-		mcp.WithDescription("Reindex specific files so they are searchable again"),
-		mcp.WithArray("paths", mcp.Required(), mcp.Description("Absolute file paths to reindex")),
+		mcp.WithDescription("Reindex specific files or directories so they are searchable again"),
+		mcp.WithArray("paths", mcp.Required(), mcp.Description("Absolute file or directory paths to reindex")),
 	)
 }
 
@@ -36,17 +36,13 @@ func (s *Server) reindexFiles(ctx context.Context, request mcp.CallToolRequest, 
 
 	cleanPaths := make([]string, 0, len(args.Paths))
 	for _, p := range args.Paths {
-		clean, err := s.resolvePath("", p)
+		clean, err := s.resolveAbsolutePath(p)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		info, err := os.Stat(clean)
-		if err != nil {
+		if _, err := os.Stat(clean); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("stat %s: %v", clean, err)), nil
-		}
-		if info.IsDir() {
-			return mcp.NewToolResultError(fmt.Sprintf("path is a directory: %s", clean)), nil
 		}
 
 		cleanPaths = append(cleanPaths, clean)
