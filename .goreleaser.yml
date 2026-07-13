@@ -11,7 +11,6 @@ builds:
   - GOTOOLCHAIN=auto
   goos:
   - linux
-  - windows
   - darwin
   goarch:
   - amd64
@@ -27,16 +26,6 @@ builds:
     env:
     - CC=aarch64-linux-gnu-gcc
     - CXX=aarch64-linux-gnu-g++
-  - goos: windows
-    goarch: amd64
-    env:
-    - CC=x86_64-w64-mingw32-gcc
-    - CXX=x86_64-w64-mingw32-g++
-  - goos: windows
-    goarch: arm64
-    env:
-    - CC=/llvm-mingw/bin/aarch64-w64-mingw32-gcc
-    - CXX=/llvm-mingw/bin/aarch64-w64-mingw32-g++
   - goos: darwin
     goarch: amd64
     env:
@@ -56,10 +45,6 @@ archives:
   formats:
   - tar.gz
   files: []
-  format_overrides:
-  - goos: windows
-    formats:
-    - zip
 
 checksum:
   name_template: checksums.txt
