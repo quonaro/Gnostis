@@ -105,14 +105,12 @@ func (s *Server) getIndexJob(ctx context.Context, request mcp.CallToolRequest, a
 
 type rebuildProjectArgs struct {
 	Project string `json:"project"`
-	Confirm bool   `json:"confirm"`
 }
 
 func rebuildProjectTool() mcp.Tool {
 	return mcp.NewTool("rebuild_project",
 		mcp.WithDescription("Rebuild the index for a single project"),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Project name")),
-		mcp.WithBoolean("confirm", mcp.Description("Must be true to start the rebuild"), mcp.DefaultBool(false)),
 	)
 }
 
@@ -124,9 +122,6 @@ func (s *Server) rebuildProject(ctx context.Context, request mcp.CallToolRequest
 	if args.Project == "" {
 		return mcp.NewToolResultError("project is required"), nil
 	}
-	if !args.Confirm {
-		return mcp.NewToolResultError("confirm must be true to rebuild"), nil
-	}
 
 	jobID, err := s.indexer.StartRebuildProject(ctx, args.Project)
 	if err != nil {
@@ -136,14 +131,11 @@ func (s *Server) rebuildProject(ctx context.Context, request mcp.CallToolRequest
 	return mcp.NewToolResultText(fmt.Sprintf(`{"job_id":%q}`, jobID)), nil
 }
 
-type rebuildIndexArgs struct {
-	Confirm bool `json:"confirm"`
-}
+type rebuildIndexArgs struct{}
 
 func rebuildIndexTool() mcp.Tool {
 	return mcp.NewTool("rebuild_index",
 		mcp.WithDescription("Rebuild the entire index"),
-		mcp.WithBoolean("confirm", mcp.Description("Must be true to start the rebuild"), mcp.DefaultBool(false)),
 	)
 }
 
@@ -151,9 +143,6 @@ func (s *Server) rebuildIndex(ctx context.Context, request mcp.CallToolRequest, 
 	slog.InfoContext(ctx, "mcp tool call", "tool", "rebuild_index")
 	if s.indexer == nil {
 		return mcp.NewToolResultError("indexer is not configured"), nil
-	}
-	if !args.Confirm {
-		return mcp.NewToolResultError("confirm must be true to rebuild"), nil
 	}
 
 	jobID, err := s.indexer.StartRebuildIndex(ctx)

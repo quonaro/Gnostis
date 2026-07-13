@@ -155,7 +155,6 @@ Rebuild the index for a single project. The operation runs in the background.
 **Parameters:**
 
 - `project` (string, required)
-- `confirm` (bool, required) — must be `true`.
 
 **Returns:** object with `job_id`.
 
@@ -163,9 +162,7 @@ Rebuild the index for a single project. The operation runs in the background.
 
 Rebuild the entire index. The operation runs in the background and may take a while.
 
-**Parameters:**
-
-- `confirm` (bool, required) — must be `true`.
+**Parameters:** none.
 
 **Returns:** object with `job_id`.
 

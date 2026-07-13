@@ -51,7 +51,7 @@ func TestGetIndexJob(t *testing.T) {
 func TestRebuildProject(t *testing.T) {
 	mock := &mockIndexer{}
 	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil)
-	res, err := srv.rebuildProject(context.Background(), mcp.CallToolRequest{}, rebuildProjectArgs{Project: "foo", Confirm: true})
+	res, err := srv.rebuildProject(context.Background(), mcp.CallToolRequest{}, rebuildProjectArgs{Project: "foo"})
 	if err != nil {
 		t.Fatalf("rebuildProject: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestRebuildProject(t *testing.T) {
 func TestRebuildIndex(t *testing.T) {
 	mock := &mockIndexer{}
 	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil)
-	res, err := srv.rebuildIndex(context.Background(), mcp.CallToolRequest{}, rebuildIndexArgs{Confirm: true})
+	res, err := srv.rebuildIndex(context.Background(), mcp.CallToolRequest{}, rebuildIndexArgs{})
 	if err != nil {
 		t.Fatalf("rebuildIndex: %v", err)
 	}
