@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -181,14 +183,20 @@ func (a *App) runHTTP(ctx context.Context) error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigChan)
 
+	startErr := make(chan error, 1)
 	go func() {
 		if err := a.mcp.StartHTTP(ctx, a.cfg.MCP.Address, a.cfg.MCP.Token); err != nil {
 			slog.ErrorContext(ctx, "mcp http server stopped", "error", err)
+			startErr <- err
 			cancel()
 		}
 	}()
 
 	select {
+	case err := <-startErr:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("mcp http server: %w", err)
+		}
 	case <-ctx.Done():
 	case <-sigChan:
 		slog.InfoContext(ctx, "shutting down")

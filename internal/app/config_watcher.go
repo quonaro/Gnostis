@@ -160,16 +160,16 @@ func (a *App) ReloadConfig(ctx context.Context) error {
 	a.rebuildMu.Lock()
 	defer a.rebuildMu.Unlock()
 
-	if err := a.restartWatcher(ctx); err != nil {
-		return fmt.Errorf("restart watcher: %w", err)
-	}
-
 	a.cfg = cfg
 	a.dirs = dirs
 	a.projects = projects
 
 	if a.mcp != nil {
 		a.mcp.ReloadProjects(projects)
+	}
+
+	if err := a.restartWatcher(ctx); err != nil {
+		return fmt.Errorf("restart watcher: %w", err)
 	}
 
 	return nil
