@@ -20,10 +20,25 @@ func TestInterpolateEnv(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		got := interpolateEnv(tc.input)
+		got := InterpolateEnv(tc.input)
 		if got != tc.expected {
 			t.Errorf("interpolateEnv(%q) = %q, want %q", tc.input, got, tc.expected)
 		}
+	}
+}
+
+func TestInterpolateTilde(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("user home dir: %v", err)
+	}
+
+	if got := InterpolateEnv("~"); got != home {
+		t.Errorf("InterpolateEnv(~) = %q, want %q", got, home)
+	}
+	want := filepath.Join(home, "foo", "bar")
+	if got := InterpolateEnv("~/foo/bar"); got != want {
+		t.Errorf("InterpolateEnv(~/foo/bar) = %q, want %q", got, want)
 	}
 }
 
@@ -91,7 +106,7 @@ func TestLoadValidation(t *testing.T) {
 	}
 }
 
-func TestLoadCascadeDefaults(t *testing.T) {
+func TestLoadMemoryCascadeDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	cascadeDir := filepath.Join(dir, "cascade-src")
@@ -103,10 +118,11 @@ func TestLoadCascadeDefaults(t *testing.T) {
 data_dir: ` + dir + `
 directories:
   - path: ` + dir + `
-cascade:
-  enabled: true
-  source_dirs:
-    - ` + cascadeDir + `
+memory:
+  cascade:
+    enabled: true
+    source_dirs:
+      - ` + cascadeDir + `
 `
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -117,15 +133,11 @@ cascade:
 		t.Fatalf("load: %v", err)
 	}
 
-	if !cfg.Cascade.Enabled {
-		t.Fatal("cascade.enabled = false, want true")
+	if !cfg.Memory.Cascade.Enabled {
+		t.Fatal("memory.cascade.enabled = false, want true")
 	}
-	wantDataDir := filepath.Join(dir, "dialogues")
-	if cfg.Cascade.DataDir != wantDataDir {
-		t.Errorf("cascade.data_dir = %q, want %q", cfg.Cascade.DataDir, wantDataDir)
-	}
-	if cfg.Cascade.MinUserMessageLength != defaultMinUserMessageLength {
-		t.Errorf("cascade.min_user_message_length = %d, want %d", cfg.Cascade.MinUserMessageLength, defaultMinUserMessageLength)
+	if cfg.Memory.Cascade.MinUserMessageLength != defaultMinUserMessageLength {
+		t.Errorf("memory.cascade.min_user_message_length = %d, want %d", cfg.Memory.Cascade.MinUserMessageLength, defaultMinUserMessageLength)
 	}
 }
 

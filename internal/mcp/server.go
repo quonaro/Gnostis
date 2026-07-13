@@ -12,6 +12,7 @@ import (
 	mcpServer "github.com/mark3labs/mcp-go/server"
 
 	"github.com/quonaro/gnostis/internal/discover"
+	"github.com/quonaro/gnostis/internal/memory"
 	"github.com/quonaro/gnostis/internal/progress"
 	"github.com/quonaro/gnostis/internal/project"
 	"github.com/quonaro/gnostis/internal/search"
@@ -46,27 +47,29 @@ type Indexer interface {
 
 // Server wraps the mcp-go server and exposes Gnostis tools.
 type Server struct {
-	mu       sync.RWMutex
-	server   *mcpServer.MCPServer
-	http     *mcpServer.StreamableHTTPServer
-	name     string
-	version  string
-	engine   Searcher
-	symbols  Finder
-	indexer  Indexer
-	projects []project.Project
+	mu            sync.RWMutex
+	server        *mcpServer.MCPServer
+	http          *mcpServer.StreamableHTTPServer
+	name          string
+	version       string
+	engine        Searcher
+	symbols       Finder
+	indexer       Indexer
+	memoryManager *memory.Manager
+	projects      []project.Project
 }
 
 // New creates and configures the MCP server.
-func New(name, version string, engine Searcher, symbols Finder, indexer Indexer, projects []project.Project) *Server {
+func New(name, version string, engine Searcher, symbols Finder, indexer Indexer, memoryManager *memory.Manager, projects []project.Project) *Server {
 	slog.Info("creating mcp server", "name", name, "version", version)
 	s := &Server{
-		name:     name,
-		version:  version,
-		engine:   engine,
-		symbols:  symbols,
-		indexer:  indexer,
-		projects: projects,
+		name:          name,
+		version:       version,
+		engine:        engine,
+		symbols:       symbols,
+		indexer:       indexer,
+		memoryManager: memoryManager,
+		projects:      projects,
 	}
 
 	s.server = mcpServer.NewMCPServer(
@@ -84,6 +87,13 @@ func (s *Server) ReloadProjects(projects []project.Project) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.projects = projects
+}
+
+// ReloadMemoryManager replaces the memory manager used by memory tools.
+func (s *Server) ReloadMemoryManager(mgr *memory.Manager) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.memoryManager = mgr
 }
 
 // StartHTTP runs the MCP server over Streamable HTTP on the given address.
@@ -146,7 +156,10 @@ func (s *Server) registerTools() {
 	s.server.AddTool(discoverProjectsTool(), mcp.NewTypedToolHandler(s.discoverProjects))
 	s.server.AddTool(addProjectTool(), mcp.NewTypedToolHandler(s.addProject))
 	s.server.AddTool(removeProjectTool(), mcp.NewTypedToolHandler(s.removeProject))
-	s.server.AddTool(writeDialogTool(), mcp.NewTypedToolHandler(s.writeDialog))
+	s.server.AddTool(memorySearchTool(), mcp.NewTypedToolHandler(s.memorySearch))
+	s.server.AddTool(memoryWriteTool(), mcp.NewTypedToolHandler(s.memoryWrite))
+	s.server.AddTool(memoryListTool(), mcp.NewTypedToolHandler(s.memoryList))
+	s.server.AddTool(memoryReadTool(), mcp.NewTypedToolHandler(s.memoryRead))
 }
 
 func searchCodebaseTool() mcp.Tool {

@@ -22,6 +22,7 @@ import (
 	"github.com/quonaro/gnostis/internal/indexer"
 	"github.com/quonaro/gnostis/internal/lock"
 	mcpServer "github.com/quonaro/gnostis/internal/mcp"
+	"github.com/quonaro/gnostis/internal/memory"
 	"github.com/quonaro/gnostis/internal/progress"
 	"github.com/quonaro/gnostis/internal/project"
 	"github.com/quonaro/gnostis/internal/search"
@@ -43,7 +44,7 @@ type App struct {
 	chunker        *chunker.Chunker
 	symbolIndex    *symbol.Index
 	watcher        *watcher.Watcher
-	chatMgr        *chatManager
+	memoryMgr      *memory.Manager
 	mcp            *mcpServer.Server
 	embeddingCache map[string][]float32
 	progress       *progress.Progress
@@ -108,24 +109,28 @@ func New(cfg config.Config) (*App, error) {
 	}
 	a.updateSnapshots(cfg, projects)
 
-	mcpSrv := mcpServer.New(cfg.MCP.Name, cfg.MCP.Version, engine, symbolIndex, a, projects)
+	mcpSrv := mcpServer.New(cfg.MCP.Name, cfg.MCP.Version, engine, symbolIndex, a, a.memoryMgr, projects)
 	a.mcp = mcpSrv
 
 	a.watcher = a.newWatcher()
 
-	if cfg.Cascade.Enabled {
-		mgr := newChatManager(cfg.Cascade, func(mdPath string) {
-			if err := a.ReindexFiles(context.Background(), []string{mdPath}); err != nil {
-				slog.Error("reindex exported chat dialogue", "path", mdPath, "error", err)
-			}
-		})
-		if err := mgr.Start(context.Background()); err != nil {
-			return nil, fmt.Errorf("start chat manager: %w", err)
+	if memoryEnabled(cfg.Memory) {
+		dataDir := config.InterpolateEnv(config.DefaultMemoryDataDir)
+		mgr, err := memory.NewManager(cfg.Memory, dataDir, provider)
+		if err != nil {
+			return nil, fmt.Errorf("create memory manager: %w", err)
 		}
-		a.chatMgr = mgr
+		if err := mgr.Start(context.Background()); err != nil {
+			return nil, fmt.Errorf("start memory manager: %w", err)
+		}
+		a.memoryMgr = mgr
 	}
 
 	return a, nil
+}
+
+func memoryEnabled(cfg config.Memory) bool {
+	return cfg.Cascade.Enabled || cfg.Cursor.Enabled
 }
 
 // updateSnapshots updates the lock-free copies used by status/read-only APIs.
@@ -181,8 +186,8 @@ func (a *App) Run(ctx context.Context) error {
 		a.rebuildMu.Unlock()
 		<-ctx.Done()
 		_ = a.watcher.Stop()
-		if a.chatMgr != nil {
-			_ = a.chatMgr.Stop()
+		if a.memoryMgr != nil {
+			_ = a.memoryMgr.Stop()
 		}
 	}()
 

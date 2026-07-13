@@ -26,7 +26,7 @@ func decryptCascadeHandler(_ context.Context, nctx engine.NativeContext) error {
 		if err != nil {
 			return fmt.Errorf("user home dir: %w", err)
 		}
-		outputDir = filepath.Join(home, ".gnostis", "data", "dialogues")
+		outputDir = filepath.Join(home, ".gnostis", "data", "memory")
 	}
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return fmt.Errorf("create output dir: %w", err)

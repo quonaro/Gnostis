@@ -7,7 +7,7 @@ type Config struct {
 	Embeddings  Embeddings  `yaml:"embeddings"`
 	Index       Index       `yaml:"index"`
 	Directories []Directory `yaml:"directories"`
-	Cascade     Cascade     `yaml:"cascade"`
+	Memory      Memory      `yaml:"memory"`
 	MCP         MCP         `yaml:"mcp"`
 }
 
@@ -49,10 +49,15 @@ type Discover struct {
 	Workspace   bool `yaml:"workspace"`
 }
 
-// Cascade configures decryption and indexing of Windsurf Cascade dialogues.
-type Cascade struct {
+// Memory configures chat/dialogue memory providers.
+type Memory struct {
+	Cascade ProviderConfig `yaml:"cascade"`
+	Cursor  ProviderConfig `yaml:"cursor"`
+}
+
+// ProviderConfig configures a single memory provider (cascade or cursor).
+type ProviderConfig struct {
 	Enabled              bool     `yaml:"enabled"`
-	DataDir              string   `yaml:"data_dir"`
 	SourceDirs           []string `yaml:"source_dirs"`
 	MinUserMessageLength int      `yaml:"min_user_message_length"`
 }
@@ -68,6 +73,7 @@ type MCP struct {
 const (
 	defaultLogLevel             = "info"
 	defaultDataDir              = "${HOME}/.gnostis/data"
+	DefaultMemoryDataDir        = "${HOME}/.gnostis/data/memory"
 	defaultConfigPath           = "${HOME}/.gnostis/config.yaml"
 	defaultProvider             = "ollama"
 	defaultURL                  = "http://localhost:11434/v1"

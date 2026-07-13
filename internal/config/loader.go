@@ -39,7 +39,7 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("read config file %s: %w", path, err)
 	}
 
-	interpolated := interpolateEnv(string(data))
+	interpolated := InterpolateEnv(string(data))
 
 	var cfg Config
 	if err := yaml.Unmarshal([]byte(interpolated), &cfg); err != nil {
@@ -57,10 +57,11 @@ func Load(path string) (Config, error) {
 }
 
 func resolveDefaultConfigPath() string {
-	return interpolateEnv(defaultConfigPath)
+	return InterpolateEnv(defaultConfigPath)
 }
 
-func interpolateEnv(input string) string {
+func InterpolateEnv(input string) string {
+	input = expandTilde(input)
 	return envPattern.ReplaceAllStringFunc(input, func(match string) string {
 		parts := envPattern.FindStringSubmatch(match)
 		if len(parts) < 2 {
@@ -81,6 +82,24 @@ func interpolateEnv(input string) string {
 	})
 }
 
+func expandTilde(input string) string {
+	if input == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return input
+		}
+		return home
+	}
+	if strings.HasPrefix(input, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return input
+		}
+		return filepath.Join(home, input[2:])
+	}
+	return input
+}
+
 func applyDefaults(cfg *Config) {
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = defaultLogLevel
@@ -88,7 +107,7 @@ func applyDefaults(cfg *Config) {
 	cfg.LogLevel = strings.ToLower(cfg.LogLevel)
 
 	if cfg.DataDir == "" {
-		cfg.DataDir = interpolateEnv(defaultDataDir)
+		cfg.DataDir = InterpolateEnv(defaultDataDir)
 	}
 	cfg.DataDir = filepath.Clean(cfg.DataDir)
 
@@ -129,18 +148,8 @@ func applyDefaults(cfg *Config) {
 		}
 	}
 
-	if cfg.Cascade.Enabled {
-		if cfg.Cascade.DataDir == "" {
-			cfg.Cascade.DataDir = filepath.Join(cfg.DataDir, "dialogues")
-		}
-		cfg.Cascade.DataDir = filepath.Clean(cfg.Cascade.DataDir)
-		if cfg.Cascade.MinUserMessageLength == 0 {
-			cfg.Cascade.MinUserMessageLength = defaultMinUserMessageLength
-		}
-		if len(cfg.Cascade.SourceDirs) == 0 {
-			cfg.Cascade.SourceDirs = defaultCascadeSourceDirs()
-		}
-	}
+	applyProviderDefaults("cascade", &cfg.Memory.Cascade)
+	applyProviderDefaults("cursor", &cfg.Memory.Cursor)
 
 	for i := range cfg.Directories {
 		if cfg.Directories[i].Name == "" {
@@ -161,6 +170,31 @@ func applyDefaults(cfg *Config) {
 			cfg.Directories[i].Discover.Workspace = true
 		}
 	}
+}
+
+func applyProviderDefaults(name string, cfg *ProviderConfig) {
+	if !cfg.Enabled {
+		return
+	}
+	if cfg.MinUserMessageLength == 0 {
+		cfg.MinUserMessageLength = defaultMinUserMessageLength
+	}
+	if len(cfg.SourceDirs) == 0 {
+		cfg.SourceDirs = existingDefaultSourceDirs(name)
+	}
+}
+
+func existingDefaultSourceDirs(name string) []string {
+	if name != "cascade" {
+		return nil
+	}
+	var out []string
+	for _, d := range DefaultMemorySourceDirs() {
+		if _, err := os.Stat(d); err == nil {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 func validate(cfg *Config) error {
@@ -205,31 +239,42 @@ func validate(cfg *Config) error {
 		}
 	}
 
-	if cfg.Cascade.Enabled {
-		if cfg.Cascade.MinUserMessageLength < 0 {
-			return fmt.Errorf("cascade.min_user_message_length must be non-negative")
+	if err := validateProvider("memory.cascade", cfg.Memory.Cascade); err != nil {
+		return err
+	}
+	if err := validateProvider("memory.cursor", cfg.Memory.Cursor); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateProvider(prefix string, cfg ProviderConfig) error {
+	if !cfg.Enabled {
+		return nil
+	}
+	if cfg.MinUserMessageLength < 0 {
+		return fmt.Errorf("%s.min_user_message_length must be non-negative", prefix)
+	}
+	if len(cfg.SourceDirs) == 0 {
+		return fmt.Errorf("%s.source_dirs is required when enabled", prefix)
+	}
+	for i, src := range cfg.SourceDirs {
+		info, err := os.Stat(src)
+		if err != nil {
+			return fmt.Errorf("%s.source_dirs[%d] %s: %w", prefix, i, src, err)
 		}
-		for i, src := range cfg.Cascade.SourceDirs {
-			info, err := os.Stat(src)
-			if err != nil {
-				return fmt.Errorf("cascade.source_dirs[%d] %s: %w", i, src, err)
-			}
-			if !info.IsDir() {
-				return fmt.Errorf("cascade.source_dirs[%d] %s is not a directory", i, src)
-			}
+		if !info.IsDir() {
+			return fmt.Errorf("%s.source_dirs[%d] %s is not a directory", prefix, i, src)
 		}
 	}
 
 	return nil
 }
 
-func defaultCascadeSourceDirs() []string {
-	return DefaultCascadeSourceDirs()
-}
-
-// DefaultCascadeSourceDirs returns the standard Windsurf/Next/Devin/Desktop
+// DefaultMemorySourceDirs returns the standard Windsurf/Next/Devin/Desktop
 // Cascade trajectory directories if they exist on the current system.
-func DefaultCascadeSourceDirs() []string {
+func DefaultMemorySourceDirs() []string {
 	home := os.Getenv("HOME")
 	if home == "" {
 		return nil

@@ -16,7 +16,7 @@ import (
 
 func TestGetIndexStatus(t *testing.T) {
 	mock := &mockIndexer{}
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil)
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil, nil)
 	res, err := srv.getIndexStatus(context.Background(), mcp.CallToolRequest{}, getIndexStatusArgs{})
 	if err != nil {
 		t.Fatalf("getIndexStatus: %v", err)
@@ -32,7 +32,7 @@ func TestGetIndexStatus(t *testing.T) {
 
 func TestGetIndexJob(t *testing.T) {
 	mock := &mockIndexer{}
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil)
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil, nil)
 	res, err := srv.getIndexJob(context.Background(), mcp.CallToolRequest{}, getIndexJobArgs{JobID: "job-1"})
 	if err != nil {
 		t.Fatalf("getIndexJob: %v", err)
@@ -52,7 +52,7 @@ func TestGetIndexJob(t *testing.T) {
 
 func TestRebuildProject(t *testing.T) {
 	mock := &mockIndexer{}
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil)
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil, nil)
 	res, err := srv.rebuildProject(context.Background(), mcp.CallToolRequest{}, rebuildProjectArgs{Project: "foo"})
 	if err != nil {
 		t.Fatalf("rebuildProject: %v", err)
@@ -67,7 +67,7 @@ func TestRebuildProject(t *testing.T) {
 
 func TestRebuildIndex(t *testing.T) {
 	mock := &mockIndexer{}
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil)
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil, nil)
 	res, err := srv.rebuildIndex(context.Background(), mcp.CallToolRequest{}, rebuildIndexArgs{})
 	if err != nil {
 		t.Fatalf("rebuildIndex: %v", err)
@@ -86,7 +86,7 @@ func TestDiscoverProjects(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	mock := &mockIndexer{}
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, []project.Project{{Name: "test", Path: dir}})
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil, []project.Project{{Name: "test", Path: dir}})
 	res, err := srv.discoverProjects(context.Background(), mcp.CallToolRequest{}, discoverProjectsArgs{Path: dir, Depth: 1})
 	if err != nil {
 		t.Fatalf("discoverProjects: %v", err)
@@ -101,7 +101,7 @@ func TestDiscoverProjects(t *testing.T) {
 
 func TestAddProject(t *testing.T) {
 	mock := &mockIndexer{}
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil)
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil, nil)
 	res, err := srv.addProject(context.Background(), mcp.CallToolRequest{}, addProjectArgs{Path: "/tmp/foo", Name: "foo"})
 	if err != nil {
 		t.Fatalf("addProject: %v", err)
@@ -116,7 +116,7 @@ func TestAddProject(t *testing.T) {
 
 func TestRemoveProject(t *testing.T) {
 	mock := &mockIndexer{}
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil)
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil, nil)
 	res, err := srv.removeProject(context.Background(), mcp.CallToolRequest{}, removeProjectArgs{Name: "foo", Confirm: true})
 	if err != nil {
 		t.Fatalf("removeProject: %v", err)
@@ -137,7 +137,7 @@ func TestDiscoverProjectsResult(t *testing.T) {
 			AlreadyAdded: []discover.Project{{Name: "old", Path: "/old"}},
 		},
 	}
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil)
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil, nil)
 	res, err := srv.discoverProjects(context.Background(), mcp.CallToolRequest{}, discoverProjectsArgs{Path: dir, Depth: 1})
 	if err != nil {
 		t.Fatalf("discoverProjects: %v", err)
@@ -172,7 +172,7 @@ func TestGetIndexStatusETA(t *testing.T) {
 			DoneChunks:  100,
 		},
 	}
-	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil)
+	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil, nil)
 	res, err := srv.getIndexStatus(context.Background(), mcp.CallToolRequest{}, getIndexStatusArgs{})
 	if err != nil {
 		t.Fatalf("getIndexStatus: %v", err)
