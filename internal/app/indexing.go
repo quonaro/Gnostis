@@ -126,7 +126,11 @@ type fileChunks struct {
 	chunks []chunker.Chunk
 }
 
-func progressAdd(bar *progressbar.ProgressBar, prog *progress.Progress, n int) {
+func progressAdd(bar *progressbar.ProgressBar, prog *progress.Progress, n int, mu *sync.Mutex) {
+	if mu != nil {
+		mu.Lock()
+		defer mu.Unlock()
+	}
 	if bar != nil {
 		_ = bar.Add(n)
 	}
@@ -143,18 +147,19 @@ func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunk
 	sem := make(chan struct{}, workers)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+	var progressMu sync.Mutex
 	var changed []fileChunks
 
 	for _, f := range files {
 		storedHash, err := st.GetFileHash(ctx, f.Path)
 		if err != nil {
 			slog.WarnContext(ctx, "lookup stored hash", "path", f.Path, "error", err)
-			progressAdd(bar, prog, 1)
+			progressAdd(bar, prog, 1, &progressMu)
 			continue
 		}
 		if storedHash == f.Hash {
 			slog.DebugContext(ctx, "skipping unchanged file", "path", f.Path)
-			progressAdd(bar, prog, 1)
+			progressAdd(bar, prog, 1, &progressMu)
 			continue
 		}
 
@@ -163,7 +168,7 @@ func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunk
 		go func(file indexer.FileInfo) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			defer progressAdd(bar, prog, 1)
+			defer progressAdd(bar, prog, 1, &progressMu)
 
 			chunks, err := ch.ChunkFile(ctx, file)
 			if err != nil {

@@ -32,19 +32,33 @@ type Watcher struct {
 
 // New creates a watcher for the given directories.
 func New(dirs []directory.Directory, onChange ChangeFunc) *Watcher {
-	ctx, cancel := context.WithCancel(context.Background())
 	return &Watcher{
 		dirs:     dirs,
 		onChange: onChange,
 		debounce: 2 * time.Second,
 		pending:  make(map[string]bool),
-		ctx:      ctx,
-		cancel:   cancel,
 	}
 }
 
 // Start begins watching directories recursively.
 func (w *Watcher) Start() error {
+	if w.watcher != nil {
+		_ = w.watcher.Close()
+	}
+	if w.cancel != nil {
+		w.cancel()
+	}
+
+	w.ctx, w.cancel = context.WithCancel(context.Background())
+
+	w.mu.Lock()
+	w.pending = make(map[string]bool)
+	if w.timer != nil {
+		w.timer.Stop()
+		w.timer = nil
+	}
+	w.mu.Unlock()
+
 	fw, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("create watcher: %w", err)
@@ -65,10 +79,24 @@ func (w *Watcher) Start() error {
 // Stop shuts down the watcher.
 func (w *Watcher) Stop() error {
 	slog.Info("stopping watcher")
-	w.cancel()
-	if w.watcher != nil {
-		return w.watcher.Close()
+	if w.cancel != nil {
+		w.cancel()
 	}
+	if w.watcher != nil {
+		if err := w.watcher.Close(); err != nil {
+			slog.Error("close watcher", "error", err)
+		}
+		w.watcher = nil
+	}
+
+	w.mu.Lock()
+	if w.timer != nil {
+		w.timer.Stop()
+		w.timer = nil
+	}
+	w.pending = make(map[string]bool)
+	w.mu.Unlock()
+
 	return nil
 }
 
@@ -107,6 +135,14 @@ func (w *Watcher) run() {
 
 func (w *Watcher) handleEvent(event fsnotify.Event) {
 	slog.Debug("filesystem event", "path", event.Name, "op", event.Op.String())
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.ctx.Err() != nil {
+		return
+	}
+
 	if event.Op == fsnotify.Create {
 		info, err := os.Stat(event.Name)
 		if err == nil && info.IsDir() {
@@ -118,13 +154,11 @@ func (w *Watcher) handleEvent(event fsnotify.Event) {
 		return
 	}
 
-	w.mu.Lock()
 	w.pending[event.Name] = true
 	if w.timer != nil {
 		w.timer.Stop()
 	}
 	w.timer = time.AfterFunc(w.debounce, w.flush)
-	w.mu.Unlock()
 }
 
 func (w *Watcher) flush() {
