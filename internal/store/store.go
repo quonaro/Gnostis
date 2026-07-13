@@ -26,6 +26,7 @@ type VectorStore interface {
 	AddChunks(ctx context.Context, chunks []chunker.Chunk, embeddings [][]float32) error
 	Query(ctx context.Context, embedding []float32, n int, filters map[string]string) ([]chromem.Result, error)
 	DeleteByPath(ctx context.Context, path string) error
+	DeleteByPaths(ctx context.Context, paths []string) error
 	GetFileHash(ctx context.Context, path string) (string, error)
 	Paths() []string
 	Count() int
@@ -144,10 +145,20 @@ func validateEmbeddings(vectors [][]float32) (int, error) {
 
 // DeleteByPath removes all chunks belonging to a file.
 func (s *Store) DeleteByPath(ctx context.Context, path string) error {
-	if err := s.col.Delete(ctx, map[string]string{"path": path}, nil); err != nil {
-		return fmt.Errorf("delete path %s: %w", path, err)
+	return s.DeleteByPaths(ctx, []string{path})
+}
+
+// DeleteByPaths removes all chunks for the given paths in a single batch.
+func (s *Store) DeleteByPaths(ctx context.Context, paths []string) error {
+	if len(paths) == 0 {
+		return nil
 	}
-	delete(s.hashes, path)
+	for _, path := range paths {
+		if err := s.col.Delete(ctx, map[string]string{"path": path}, nil); err != nil {
+			return fmt.Errorf("delete path %s: %w", path, err)
+		}
+		delete(s.hashes, path)
+	}
 	if err := s.saveHashes(); err != nil {
 		return fmt.Errorf("save file hashes: %w", err)
 	}

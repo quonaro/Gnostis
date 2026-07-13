@@ -45,6 +45,7 @@ func indexDirectory(ctx context.Context, out io.Writer, dir directory.Directory,
 			progressbar.OptionSetWriter(out),
 			progressbar.OptionShowCount(),
 			progressbar.OptionSetDescription(fmt.Sprintf("chunking %s", proj.Name)),
+			progressbar.OptionSetPredictTime(true),
 		)
 	}
 
@@ -74,9 +75,14 @@ func indexDirectory(ctx context.Context, out io.Writer, dir directory.Directory,
 	}
 
 	if bar != nil {
-		bar.ChangeMax(len(allChunks))
-		_ = bar.Set(0)
-		bar.Describe(fmt.Sprintf("embedding %s", proj.Name))
+		_ = bar.Finish()
+		bar = progressbar.NewOptions(len(allChunks),
+			progressbar.OptionSetWriter(out),
+			progressbar.OptionShowCount(),
+			progressbar.OptionSetDescription(fmt.Sprintf("embedding %s", proj.Name)),
+			progressbar.OptionShowIts(),
+			progressbar.OptionSetPredictTime(true),
+		)
 	}
 
 	vectors, err := embedChunks(ctx, provider, allChunks, cache, func(done int) {
@@ -169,10 +175,14 @@ func chunkFilesParallel(ctx context.Context, files []indexer.FileInfo, ch *chunk
 	}
 	wg.Wait()
 
+	paths := make([]string, len(changed))
+	for i, fc := range changed {
+		paths[i] = fc.file.Path
+	}
+	if err := st.DeleteByPaths(ctx, paths); err != nil {
+		slog.WarnContext(ctx, "delete stale chunks", "error", err)
+	}
 	for _, fc := range changed {
-		if err := st.DeleteByPath(ctx, fc.file.Path); err != nil {
-			slog.WarnContext(ctx, "delete stale chunks", "path", fc.file.Path, "error", err)
-		}
 		sym.RemoveByPath(fc.file.Path)
 		sym.AddChunks(chunksToSymbolChunks(fc.chunks))
 	}

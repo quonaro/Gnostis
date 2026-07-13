@@ -225,12 +225,14 @@ func (a *App) RebuildProject(ctx context.Context, name string) error {
 
 		slog.InfoContext(ctx, "rebuilding project", "project", p.Name, "path", a.dirs[i].Path)
 
+		var toDelete []string
 		for _, path := range a.store.Paths() {
 			if strings.HasPrefix(path, a.dirs[i].Path) {
-				_ = a.store.DeleteByPath(ctx, path)
+				toDelete = append(toDelete, path)
 				a.symbolIndex.RemoveByPath(path)
 			}
 		}
+		_ = a.store.DeleteByPaths(ctx, toDelete)
 
 		if err := indexDirectory(ctx, a.ProgressWriter, a.dirs[i], p, a.indexer, a.chunker, a.provider, a.store, a.symbolIndex, a.embeddingCache, a.progress, a.indexingStats); err != nil {
 			return fmt.Errorf("index %s: %w", a.dirs[i].Path, err)

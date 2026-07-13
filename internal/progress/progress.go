@@ -34,6 +34,7 @@ type State struct {
 	DoneFiles   int       `json:"done_files"`
 	TotalChunks int       `json:"total_chunks"`
 	DoneChunks  int       `json:"done_chunks"`
+	PID         int       `json:"pid"`
 	StartedAt   time.Time `json:"started_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 	Error       string    `json:"error,omitempty"`
@@ -85,6 +86,7 @@ func (p *Progress) Start(project string, totalFiles int) error {
 		Phase:      PhaseIndexing,
 		Project:    project,
 		TotalFiles: totalFiles,
+		PID:        os.Getpid(),
 		StartedAt:  now,
 		UpdatedAt:  now,
 	}
@@ -124,6 +126,14 @@ func (p *Progress) AddChunks(n int) error {
 	defer p.mu.Unlock()
 	p.state.DoneChunks += n
 	p.state.UpdatedAt = time.Now().UTC()
+	return p.saveLocked()
+}
+
+// Reset clears any running/error state and returns to idle.
+func (p *Progress) Reset() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.state = State{Status: StatusIdle, UpdatedAt: time.Now().UTC()}
 	return p.saveLocked()
 }
 

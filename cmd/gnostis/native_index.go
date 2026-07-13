@@ -178,7 +178,24 @@ func isRebuildRunning(dataDir string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("load progress: %w", err)
 	}
-	return s.Status == progress.StatusRunning, nil
+	if s.Status != progress.StatusRunning {
+		return false, nil
+	}
+	if s.PID == 0 {
+		// Legacy progress file without PID tracking. Reset it rather than
+		// blocking forever on a potentially stale lock.
+		_ = p.Reset()
+		return false, nil
+	}
+	if s.PID == os.Getpid() {
+		return true, nil
+	}
+	proc, err := os.FindProcess(s.PID)
+	if err != nil || proc.Signal(syscall.Signal(0)) != nil {
+		_ = p.Reset()
+		return false, nil
+	}
+	return true, nil
 }
 
 func spawnDetachedRebuild(dataDir, project string) (int, error) {
