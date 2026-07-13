@@ -109,11 +109,6 @@ func New(cfg config.Config) (*App, error) {
 	}
 	a.updateSnapshots(cfg, projects)
 
-	mcpSrv := mcpServer.New(cfg.MCP.Name, cfg.MCP.Version, engine, symbolIndex, a, a.memoryMgr, projects)
-	a.mcp = mcpSrv
-
-	a.watcher = a.newWatcher()
-
 	if memoryEnabled(cfg.Memory) {
 		dataDir := config.InterpolateEnv(config.DefaultMemoryDataDir)
 		mgr, err := memory.NewManager(cfg.Memory, dataDir, provider)
@@ -125,6 +120,11 @@ func New(cfg config.Config) (*App, error) {
 		}
 		a.memoryMgr = mgr
 	}
+
+	mcpSrv := mcpServer.New(cfg.MCP.Name, cfg.MCP.Version, engine, symbolIndex, a, a.memoryMgr, projects)
+	a.mcp = mcpSrv
+
+	a.watcher = a.newWatcher()
 
 	return a, nil
 }

@@ -29,6 +29,7 @@ type Manager struct {
 	wg        sync.WaitGroup
 	provider  embeddings.Provider
 	cache     map[string][]float32
+	pending   map[string]struct{}
 }
 
 // NewManager creates a memory manager from configuration.
@@ -58,6 +59,7 @@ func NewManager(cfg config.Memory, dataDir string, provider embeddings.Provider)
 		stop:      make(chan struct{}),
 		provider:  provider,
 		cache:     make(map[string][]float32),
+		pending:   make(map[string]struct{}),
 	}, nil
 }
 
@@ -92,7 +94,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
-		if err := m.syncAll(ctx); err != nil {
+		if err := m.syncAll(ctx, nil); err != nil {
 			slog.ErrorContext(ctx, "initial memory sync failed", "error", err)
 		}
 	}()
@@ -136,7 +138,17 @@ func (m *Manager) run(ctx context.Context) {
 		case <-m.stop:
 			return
 		case <-ticker.C:
-			if err := m.syncAll(ctx); err != nil {
+			var skip map[string]struct{}
+			if len(m.pending) > 0 {
+				skip = m.pending
+				m.pending = make(map[string]struct{})
+				for path := range skip {
+					if err := m.exportFile(ctx, path); err != nil {
+						slog.ErrorContext(ctx, "export memory file", "path", path, "error", err)
+					}
+				}
+			}
+			if err := m.syncAll(ctx, skip); err != nil {
 				slog.ErrorContext(ctx, "periodic memory sync failed", "error", err)
 			}
 		case event, ok := <-m.watcher.Events:
@@ -144,9 +156,7 @@ func (m *Manager) run(ctx context.Context) {
 				return
 			}
 			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
-				if err := m.exportFile(ctx, event.Name); err != nil {
-					slog.ErrorContext(ctx, "export memory file", "path", event.Name, "error", err)
-				}
+				m.pending[event.Name] = struct{}{}
 			}
 		case err, ok := <-m.watcher.Errors:
 			if !ok {
@@ -157,7 +167,7 @@ func (m *Manager) run(ctx context.Context) {
 	}
 }
 
-func (m *Manager) syncAll(ctx context.Context) error {
+func (m *Manager) syncAll(ctx context.Context, skip map[string]struct{}) error {
 	var exported int
 	for _, p := range m.providers {
 		if !p.Enabled() {
@@ -179,6 +189,9 @@ func (m *Manager) syncAll(ctx context.Context) error {
 					continue
 				}
 				path := filepath.Join(src, entry.Name())
+				if _, ok := skip[path]; ok {
+					continue
+				}
 				if err := m.exportFile(ctx, path); err != nil {
 					slog.ErrorContext(ctx, "export memory file", "provider", p.Name(), "path", path, "error", err)
 					continue
@@ -240,7 +253,7 @@ func (m *Manager) Rebuild(ctx context.Context) error {
 		return fmt.Errorf("clear memory store: %w", err)
 	}
 
-	if err := m.syncAll(ctx); err != nil {
+	if err := m.syncAll(ctx, nil); err != nil {
 		return fmt.Errorf("sync memory providers: %w", err)
 	}
 
