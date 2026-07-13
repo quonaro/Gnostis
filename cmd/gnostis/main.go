@@ -66,6 +66,7 @@ func main() {
 	builder.RegisterNative("run", runHandler)
 	builder.RegisterNative("install", installHandler)
 	builder.RegisterNative("config", configShowHandler)
+	builder.RegisterNative("decrypt-cascade", decryptCascadeHandler)
 
 	app, err := builder.Build()
 	if err != nil {

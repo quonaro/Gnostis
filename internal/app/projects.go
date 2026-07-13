@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -14,10 +15,13 @@ import (
 	"github.com/quonaro/gnostis/internal/project"
 )
 
+const cascadeProjectID = "cascade-dialogues"
+
 // resolveProjects expands config directories into concrete directory/project pairs.
 // Auto-discovery is applied to directories marked with Auto.
 // Explicit (non-auto) directories are processed first so auto-discovery can skip
 // paths that are already configured.
+// When Cascade is enabled, a synthetic cascade-dialogues project is appended.
 func resolveProjects(cfg config.Config) ([]directory.Directory, []project.Project, error) {
 	var dirs []directory.Directory
 	var projects []project.Project
@@ -74,7 +78,32 @@ func resolveProjects(cfg config.Config) ([]directory.Directory, []project.Projec
 		}
 	}
 
+	if cfg.Cascade.Enabled {
+		dirs, projects = appendCascadeProject(cfg.Cascade, dirs, projects, usedNames, usedPaths)
+	}
+
 	return dirs, projects, nil
+}
+
+func appendCascadeProject(cascade config.Cascade, dirs []directory.Directory, projects []project.Project, usedNames, usedPaths map[string]bool) ([]directory.Directory, []project.Project) {
+	if cascade.DataDir == "" {
+		return dirs, projects
+	}
+	if usedNames[cascadeProjectID] || usedPaths[cascade.DataDir] {
+		return dirs, projects
+	}
+	if err := os.MkdirAll(cascade.DataDir, 0o755); err != nil {
+		slog.Error("create cascade data dir", "error", err, "path", cascade.DataDir)
+		return dirs, projects
+	}
+
+	d := directory.FromConfig(config.Index{}, config.Directory{
+		Path:          cascade.DataDir,
+		Name:          cascadeProjectID,
+		Extensions:    []string{".md"},
+		MaxFileSizeMB: 50,
+	})
+	return append(dirs, d), append(projects, project.New(cascadeProjectID, cascade.DataDir))
 }
 
 // DiscoverProjects scans root and returns projects that are not already configured.

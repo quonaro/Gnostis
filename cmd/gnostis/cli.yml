@@ -9,3 +9,9 @@ install:
 config:
   desc: Show interpolated config with secrets masked
   native: true
+
+decrypt-cascade:
+  desc: Decrypt Windsurf Cascade .pb files and export them as Markdown
+  native: true
+  vars:
+  - "OUTPUT_DIR="

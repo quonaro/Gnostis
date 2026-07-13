@@ -129,6 +129,19 @@ func applyDefaults(cfg *Config) {
 		}
 	}
 
+	if cfg.Cascade.Enabled {
+		if cfg.Cascade.DataDir == "" {
+			cfg.Cascade.DataDir = filepath.Join(cfg.DataDir, "dialogues")
+		}
+		cfg.Cascade.DataDir = filepath.Clean(cfg.Cascade.DataDir)
+		if cfg.Cascade.MinUserMessageLength == 0 {
+			cfg.Cascade.MinUserMessageLength = defaultMinUserMessageLength
+		}
+		if len(cfg.Cascade.SourceDirs) == 0 {
+			cfg.Cascade.SourceDirs = defaultCascadeSourceDirs()
+		}
+	}
+
 	for i := range cfg.Directories {
 		if cfg.Directories[i].Name == "" {
 			cfg.Directories[i].Name = filepath.Base(cfg.Directories[i].Path)
@@ -192,5 +205,40 @@ func validate(cfg *Config) error {
 		}
 	}
 
+	if cfg.Cascade.Enabled {
+		if cfg.Cascade.MinUserMessageLength < 0 {
+			return fmt.Errorf("cascade.min_user_message_length must be non-negative")
+		}
+		for i, src := range cfg.Cascade.SourceDirs {
+			info, err := os.Stat(src)
+			if err != nil {
+				return fmt.Errorf("cascade.source_dirs[%d] %s: %w", i, src, err)
+			}
+			if !info.IsDir() {
+				return fmt.Errorf("cascade.source_dirs[%d] %s is not a directory", i, src)
+			}
+		}
+	}
+
 	return nil
+}
+
+func defaultCascadeSourceDirs() []string {
+	return DefaultCascadeSourceDirs()
+}
+
+// DefaultCascadeSourceDirs returns the standard Windsurf/Next/Devin/Desktop
+// Cascade trajectory directories if they exist on the current system.
+func DefaultCascadeSourceDirs() []string {
+	home := os.Getenv("HOME")
+	if home == "" {
+		return nil
+	}
+	base := filepath.Join(home, ".codeium")
+	return []string{
+		filepath.Join(base, "windsurf", "cascade"),
+		filepath.Join(base, "windsurf-next", "cascade"),
+		filepath.Join(base, "devin", "cascade"),
+		filepath.Join(base, "devin-desktop", "cascade"),
+	}
 }

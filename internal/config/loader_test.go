@@ -91,6 +91,44 @@ func TestLoadValidation(t *testing.T) {
 	}
 }
 
+func TestLoadCascadeDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	cascadeDir := filepath.Join(dir, "cascade-src")
+	if err := os.MkdirAll(cascadeDir, 0o755); err != nil {
+		t.Fatalf("create cascade dir: %v", err)
+	}
+
+	data := `
+data_dir: ` + dir + `
+directories:
+  - path: ` + dir + `
+cascade:
+  enabled: true
+  source_dirs:
+    - ` + cascadeDir + `
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	if !cfg.Cascade.Enabled {
+		t.Fatal("cascade.enabled = false, want true")
+	}
+	wantDataDir := filepath.Join(dir, "dialogues")
+	if cfg.Cascade.DataDir != wantDataDir {
+		t.Errorf("cascade.data_dir = %q, want %q", cfg.Cascade.DataDir, wantDataDir)
+	}
+	if cfg.Cascade.MinUserMessageLength != defaultMinUserMessageLength {
+		t.Errorf("cascade.min_user_message_length = %d, want %d", cfg.Cascade.MinUserMessageLength, defaultMinUserMessageLength)
+	}
+}
+
 func TestResolvePath(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

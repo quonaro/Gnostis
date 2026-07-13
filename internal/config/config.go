@@ -2,11 +2,12 @@ package config
 
 // Config holds the complete application configuration.
 type Config struct {
-	LogLevel    string `yaml:"log_level"`
-	DataDir     string
+	LogLevel    string      `yaml:"log_level"`
+	DataDir     string      `yaml:"data_dir"`
 	Embeddings  Embeddings  `yaml:"embeddings"`
 	Index       Index       `yaml:"index"`
 	Directories []Directory `yaml:"directories"`
+	Cascade     Cascade     `yaml:"cascade"`
 	MCP         MCP         `yaml:"mcp"`
 }
 
@@ -48,6 +49,14 @@ type Discover struct {
 	Workspace   bool `yaml:"workspace"`
 }
 
+// Cascade configures decryption and indexing of Windsurf Cascade dialogues.
+type Cascade struct {
+	Enabled              bool     `yaml:"enabled"`
+	DataDir              string   `yaml:"data_dir"`
+	SourceDirs           []string `yaml:"source_dirs"`
+	MinUserMessageLength int      `yaml:"min_user_message_length"`
+}
+
 // MCP configures the Model Context Protocol server.
 type MCP struct {
 	Name    string `yaml:"name"`
@@ -57,14 +66,15 @@ type MCP struct {
 }
 
 const (
-	defaultLogLevel   = "info"
-	defaultDataDir    = "${HOME}/.gnostis/data"
-	defaultConfigPath = "${HOME}/.gnostis/config.yaml"
-	defaultProvider   = "ollama"
-	defaultURL        = "http://localhost:11434/v1"
-	defaultModel      = "nomic-embed-text"
-	defaultBatchSize  = 32
-	defaultServerName = "gnostis"
-	defaultVersion    = ""
-	defaultAddress    = "127.0.0.1:8080"
+	defaultLogLevel             = "info"
+	defaultDataDir              = "${HOME}/.gnostis/data"
+	defaultConfigPath           = "${HOME}/.gnostis/config.yaml"
+	defaultProvider             = "ollama"
+	defaultURL                  = "http://localhost:11434/v1"
+	defaultModel                = "nomic-embed-text"
+	defaultBatchSize            = 32
+	defaultServerName           = "gnostis"
+	defaultVersion              = ""
+	defaultAddress              = "127.0.0.1:8080"
+	defaultMinUserMessageLength = 10
 )

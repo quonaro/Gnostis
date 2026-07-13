@@ -146,6 +146,7 @@ func (s *Server) registerTools() {
 	s.server.AddTool(discoverProjectsTool(), mcp.NewTypedToolHandler(s.discoverProjects))
 	s.server.AddTool(addProjectTool(), mcp.NewTypedToolHandler(s.addProject))
 	s.server.AddTool(removeProjectTool(), mcp.NewTypedToolHandler(s.removeProject))
+	s.server.AddTool(writeDialogTool(), mcp.NewTypedToolHandler(s.writeDialog))
 }
 
 func searchCodebaseTool() mcp.Tool {

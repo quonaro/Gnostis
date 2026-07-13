@@ -43,6 +43,7 @@ type App struct {
 	chunker        *chunker.Chunker
 	symbolIndex    *symbol.Index
 	watcher        *watcher.Watcher
+	chatMgr        *chatManager
 	mcp            *mcpServer.Server
 	embeddingCache map[string][]float32
 	progress       *progress.Progress
@@ -112,6 +113,18 @@ func New(cfg config.Config) (*App, error) {
 
 	a.watcher = a.newWatcher()
 
+	if cfg.Cascade.Enabled {
+		mgr := newChatManager(cfg.Cascade, func(mdPath string) {
+			if err := a.ReindexFiles(context.Background(), []string{mdPath}); err != nil {
+				slog.Error("reindex exported chat dialogue", "path", mdPath, "error", err)
+			}
+		})
+		if err := mgr.Start(context.Background()); err != nil {
+			return nil, fmt.Errorf("start chat manager: %w", err)
+		}
+		a.chatMgr = mgr
+	}
+
 	return a, nil
 }
 
@@ -168,6 +181,9 @@ func (a *App) Run(ctx context.Context) error {
 		a.rebuildMu.Unlock()
 		<-ctx.Done()
 		_ = a.watcher.Stop()
+		if a.chatMgr != nil {
+			_ = a.chatMgr.Stop()
+		}
 	}()
 
 	wg.Add(1)

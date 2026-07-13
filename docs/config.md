@@ -64,6 +64,13 @@ mcp:
   name: gnostis
   address: "127.0.0.1:8080"
   token: ""
+
+cascade:
+  enabled: false
+  data_dir: ${HOME}/.gnostis/data/dialogues
+  source_dirs:
+    - ${HOME}/.codeium/windsurf-next/cascade
+  min_user_message_length: 10
 ```
 
 ## Fields
@@ -113,6 +120,23 @@ Gnostis only supports the `streamable-http` MCP transport. The endpoint is `/mcp
 - `version`: server version. Default: short git commit hash at build time.
 - `address`: listen address. Default: `127.0.0.1:8080`, or `127.0.0.1:${GNOSTIS_PORT}`.
 - `token`: optional Bearer token. When set, clients must send `Authorization: Bearer <token>`.
+
+### `cascade`
+
+Opt-in indexing of Windsurf/Cascade/Devin Desktop conversation trajectories.
+
+- `enabled`: when `true`, Gnostis decrypts `.pb` files, exports them as Markdown, and indexes them as the `cascade-dialogues` project. Default: `false`.
+- `data_dir`: where exported Markdown files are stored. Default: `${HOME}/.gnostis/data/dialogues`.
+- `source_dirs`: list of directories containing `.pb` files. Default: all existing `~/.codeium/{windsurf,windsurf-next,devin,devin-desktop}/cascade` directories.
+- `min_user_message_length`: shortest user message to keep in the dialogue section. Default: `10`.
+
+You can also export sessions manually without enabling auto-indexing:
+
+```bash
+gnostis decrypt-cascade
+```
+
+To export to a different directory, set the `OUTPUT_DIR` variable in your shell or use the configuration file.
 
 ## Filter precedence
 
