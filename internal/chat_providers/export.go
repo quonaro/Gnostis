@@ -36,7 +36,11 @@ func (e Exporter) ExportSession(p Provider, sourcePath, destDir string, plaintex
 	fmt.Fprintf(&b, "- **Decrypted size:** %d bytes\n", len(plaintext))
 	fmt.Fprintf(&b, "- **Dialogue turns:** %d\n", len(turns))
 	fmt.Fprintf(&b, "- **Extracted strings:** %d\n", len(allStrings))
-	fmt.Fprintf(&b, "- **Exported:** %s\n", time.Now().UTC().Format(time.RFC3339))
+	exportedAt := time.Now().UTC()
+	if info, err := os.Stat(sourcePath); err == nil {
+		exportedAt = info.ModTime().UTC()
+	}
+	fmt.Fprintf(&b, "- **Exported:** %s\n", exportedAt.Format(time.RFC3339))
 	fmt.Fprintf(&b, "\n---\n\n")
 
 	if len(turns) > 0 {

@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/quonaro/gnostis/internal/chat_providers"
@@ -89,10 +90,14 @@ func TestExtractStrings(t *testing.T) {
 
 func TestExportSession(t *testing.T) {
 	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "session.pb")
+	if err := os.WriteFile(srcPath, []byte("dummy"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
 	plaintext := buildSimpleDialogue()
 
 	exp := chat_providers.Exporter{MinUserMessageLength: 1}
-	path, err := exp.ExportSession(NewProvider(), "/tmp/session.pb", dir, plaintext)
+	path, err := exp.ExportSession(NewProvider(), srcPath, dir, plaintext)
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -105,6 +110,41 @@ func TestExportSession(t *testing.T) {
 	}
 	if !bytes.Contains(data, []byte("### Assistant")) {
 		t.Errorf("exported markdown missing Assistant section")
+	}
+}
+
+func TestExportSessionIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "session.pb")
+	if err := os.WriteFile(srcPath, []byte("dummy"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	plaintext := buildSimpleDialogue()
+
+	exp := chat_providers.Exporter{MinUserMessageLength: 1}
+	provider := NewProvider()
+	path1, err := exp.ExportSession(provider, srcPath, dir, plaintext)
+	if err != nil {
+		t.Fatalf("first export: %v", err)
+	}
+	path2, err := exp.ExportSession(provider, srcPath, dir, plaintext)
+	if err != nil {
+		t.Fatalf("second export: %v", err)
+	}
+	if path1 != path2 {
+		t.Fatalf("export paths differ: %q vs %q", path1, path2)
+	}
+
+	data1, err := os.ReadFile(path1)
+	if err != nil {
+		t.Fatalf("read first export: %v", err)
+	}
+	data2, err := os.ReadFile(path2)
+	if err != nil {
+		t.Fatalf("read second export: %v", err)
+	}
+	if !bytes.Equal(data1, data2) {
+		t.Errorf("repeated exports differ; timestamp is not stable")
 	}
 }
 
