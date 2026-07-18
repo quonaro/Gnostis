@@ -68,7 +68,7 @@ func (w *Watcher) Start() error {
 	for _, dir := range w.dirs {
 		slog.Info("watching directory", "path", dir.Path)
 		if err := w.addRecursive(dir.Path); err != nil {
-			return fmt.Errorf("watch %s: %w", dir.Path, err)
+			slog.Error("watch directory", "path", dir.Path, "error", err)
 		}
 	}
 
@@ -103,12 +103,15 @@ func (w *Watcher) Stop() error {
 func (w *Watcher) addRecursive(root string) error {
 	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return err
+			slog.Error("walk directory", "path", path, "error", err)
+			return nil
 		}
-		if d.IsDir() {
-			if err := w.watcher.Add(path); err != nil {
-				return fmt.Errorf("watch dir %s: %w", path, err)
-			}
+		if !d.IsDir() {
+			return nil
+		}
+		if err := w.watcher.Add(path); err != nil {
+			slog.Error("watch dir", "path", path, "error", err)
+			return filepath.SkipDir
 		}
 		return nil
 	})
