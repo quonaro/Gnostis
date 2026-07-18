@@ -41,7 +41,7 @@ type Indexer interface {
 	StartRebuildProject(ctx context.Context, name string) (string, error)
 	StartRebuildIndex(ctx context.Context) (string, error)
 	DiscoverProjects(ctx context.Context, root string, opts discover.Options) (discover.Result, error)
-	AddProject(ctx context.Context, path, name string) error
+	AddProject(ctx context.Context, path, name string) (string, error)
 	RemoveProject(ctx context.Context, name string) error
 }
 

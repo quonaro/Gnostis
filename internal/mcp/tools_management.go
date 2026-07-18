@@ -254,11 +254,19 @@ func (s *Server) addProject(ctx context.Context, request mcp.CallToolRequest, ar
 		return toolError(errReasonInvalidArgument, "path is required", "provide an absolute directory path"), nil
 	}
 
-	if err := s.indexer.AddProject(ctx, args.Path, args.Name); err != nil {
+	name, err := s.indexer.AddProject(ctx, args.Path, args.Name)
+	if err != nil {
 		slog.ErrorContext(ctx, "add_project failed", "path", args.Path, "error", err)
 		return toolError(errReasonSearchFailed, err.Error(), "try again later or check the path"), nil
 	}
-	return mcp.NewToolResultText(`{"added":true}`), nil
+
+	jobID, err := s.indexer.StartRebuildProject(ctx, name)
+	if err != nil {
+		slog.ErrorContext(ctx, "add_project: start rebuild failed", "project", name, "error", err)
+		return toolError(errReasonSearchFailed, err.Error(), "try again later or check the project name"), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf(`{"added":true,"job_id":%q}`, jobID)), nil
 }
 
 type removeProjectArgs struct {

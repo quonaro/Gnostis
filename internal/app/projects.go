@@ -91,21 +91,22 @@ func (a *App) DiscoverProjects(ctx context.Context, root string, opts discover.O
 	return discover.FindProjects(root, opts, existing)
 }
 
-// AddProject adds a new directory to the config and reloads the project list.
-func (a *App) AddProject(ctx context.Context, path, name string) error {
+// AddProject adds a new directory to the config, reloads the project list, and
+// returns the assigned project name.
+func (a *App) AddProject(ctx context.Context, path, name string) (string, error) {
 	if path == "" {
-		return fmt.Errorf("path is required")
+		return "", fmt.Errorf("path is required")
 	}
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("resolve path: %w", err)
+		return "", fmt.Errorf("resolve path: %w", err)
 	}
 	info, err := os.Stat(absPath)
 	if err != nil {
-		return fmt.Errorf("stat %s: %w", absPath, err)
+		return "", fmt.Errorf("stat %s: %w", absPath, err)
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("%s is not a directory", absPath)
+		return "", fmt.Errorf("%s is not a directory", absPath)
 	}
 
 	a.rebuildMu.Lock()
@@ -113,7 +114,7 @@ func (a *App) AddProject(ctx context.Context, path, name string) error {
 
 	for _, p := range a.projects {
 		if p.Path == absPath {
-			return fmt.Errorf("project with path %q already exists", absPath)
+			return "", fmt.Errorf("project with path %q already exists", absPath)
 		}
 	}
 
@@ -129,15 +130,15 @@ func (a *App) AddProject(ctx context.Context, path, name string) error {
 	a.updateSnapshots(a.cfg, a.projects)
 
 	if err := a.saveConfig(); err != nil {
-		return fmt.Errorf("save config: %w", err)
+		return "", fmt.Errorf("save config: %w", err)
 	}
 	if a.mcp != nil {
 		a.mcp.ReloadProjects(a.projects)
 	}
 	if err := a.restartWatcher(ctx); err != nil {
-		return fmt.Errorf("restart watcher: %w", err)
+		return "", fmt.Errorf("restart watcher: %w", err)
 	}
-	return nil
+	return name, nil
 }
 
 // RemoveProject removes a project by name and deletes its indexed chunks.

@@ -42,8 +42,8 @@ func (m *mockIndexer) DiscoverProjects(context.Context, string, discover.Options
 	m.discoverCalled = true
 	return m.discoverResult, nil
 }
-func (m *mockIndexer) AddProject(context.Context, string, string) error { return nil }
-func (m *mockIndexer) RemoveProject(context.Context, string) error      { return nil }
+func (m *mockIndexer) AddProject(context.Context, string, string) (string, error) { return "foo", nil }
+func (m *mockIndexer) RemoveProject(context.Context, string) error                { return nil }
 
 func (m *mockIndexer) ReindexFiles(ctx context.Context, paths []string) error {
 	m.paths = append(m.paths, paths...)

@@ -184,14 +184,14 @@ Discover projects under a directory and show what would be added.
 
 ## `add_project`
 
-Add a directory to the index and write it to `config.yaml`.
+Add a directory to the index, write it to `config.yaml`, and start indexing it in the background.
 
 **Parameters:**
 
 - `path` (string, required) — absolute directory path.
 - `name` (string, optional) — project name, defaults to directory name.
 
-**Returns:** object with `added`.
+**Returns:** object with `added` and `job_id`.
 
 ## `remove_project`
 
