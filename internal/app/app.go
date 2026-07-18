@@ -2,18 +2,12 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
-	"os"
-	"os/signal"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"syscall"
-	"time"
 
 	"github.com/quonaro/gnostis/internal/chunker"
 	"github.com/quonaro/gnostis/internal/config"
@@ -156,15 +150,22 @@ func (a *App) Run(ctx context.Context) error {
 	errCh := make(chan error, 3)
 	var wg sync.WaitGroup
 
+	ready := make(chan struct{})
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		slog.InfoContext(ctx, "serving mcp http", "name", a.cfg.MCP.Name, "version", a.cfg.MCP.Version, "address", a.cfg.MCP.Address)
-		if err := a.runHTTP(ctx); err != nil {
+		if err := a.runHTTP(ctx, ready); err != nil {
 			errCh <- err
 		}
 		cancel()
 	}()
+
+	select {
+	case <-ready:
+	case err := <-errCh:
+		return err
+	}
 
 	wg.Add(1)
 	go func() {
@@ -204,41 +205,6 @@ func (a *App) Run(ctx context.Context) error {
 	close(errCh)
 	for err := range errCh {
 		return err
-	}
-	return nil
-}
-
-func (a *App) runHTTP(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(sigChan)
-
-	startErr := make(chan error, 1)
-	go func() {
-		if err := a.mcp.StartHTTP(ctx, a.cfg.MCP.Address, a.cfg.MCP.Token); err != nil {
-			slog.ErrorContext(ctx, "mcp http server stopped", "error", err)
-			startErr <- err
-			cancel()
-		}
-	}()
-
-	select {
-	case err := <-startErr:
-		if !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("mcp http server: %w", err)
-		}
-	case <-ctx.Done():
-	case <-sigChan:
-		slog.InfoContext(ctx, "shutting down")
-	}
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutdownCancel()
-	if err := a.mcp.StopHTTP(shutdownCtx); err != nil {
-		slog.ErrorContext(ctx, "stop mcp http server", "error", err)
 	}
 	return nil
 }
