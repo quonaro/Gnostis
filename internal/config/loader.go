@@ -147,6 +147,9 @@ func applyDefaults(cfg *Config) {
 			cfg.MCP.Address = fmt.Sprintf("127.0.0.1:%s", port)
 		}
 	}
+	if cfg.MCP.Token == "" {
+		cfg.MCP.Token = os.Getenv("API_TOKEN")
+	}
 
 	applyProviderDefaults("cascade", &cfg.Memory.Cascade)
 	applyProviderDefaults("cursor", &cfg.Memory.Cursor)

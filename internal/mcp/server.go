@@ -2,10 +2,10 @@ package mcp
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"sync"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -106,6 +106,7 @@ func (s *Server) StartHTTP(ctx context.Context, addr, token string) error {
 		s.http.ServeHTTP(w, r)
 	})
 	if token != "" {
+		slog.InfoContext(ctx, "bearer token authentication enabled")
 		handler = bearerTokenHandler(handler, token)
 	}
 
@@ -118,10 +119,10 @@ func (s *Server) StartHTTP(ctx context.Context, addr, token string) error {
 }
 
 func bearerTokenHandler(next http.Handler, token string) http.Handler {
+	expected := "Bearer " + token
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
-		const prefix = "Bearer "
-		if !strings.HasPrefix(auth, prefix) || auth[len(prefix):] != token {
+		if subtle.ConstantTimeCompare([]byte(auth), []byte(expected)) != 1 {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
