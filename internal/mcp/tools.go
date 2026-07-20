@@ -65,7 +65,7 @@ func (s *Server) searchCodebase(ctx context.Context, request mcp.CallToolRequest
 	}
 
 	if args.Path != "" {
-		prefix, err := s.resolvePath(args.Project, args.Path)
+		prefix, err := s.resolvePathOrAbsolute(args.Project, args.Path)
 		if err != nil {
 			return toolErrorFromResolvePath(err), nil
 		}
@@ -83,6 +83,12 @@ func (s *Server) searchCodebase(ctx context.Context, request mcp.CallToolRequest
 		return toolError(errReasonSearchFailed, err.Error(), "try again later or check the index status"), nil
 	}
 	slog.DebugContext(ctx, "search_codebase results", "count", len(results))
+
+	if len(results) == 0 {
+		if notReady := s.indexNotReadyError(); notReady != nil {
+			return notReady, nil
+		}
+	}
 
 	items := make([]searchResultItem, len(results))
 	for i, r := range results {
@@ -223,7 +229,7 @@ func (s *Server) getFileContext(ctx context.Context, request mcp.CallToolRequest
 		return toolError(errReasonInvalidArgument, "path is required", "provide an absolute file path"), nil
 	}
 
-	clean, err := s.resolvePath("", args.Path)
+	clean, err := s.resolvePathOrAbsolute("", args.Path)
 	if err != nil {
 		return toolErrorFromResolvePath(err), nil
 	}

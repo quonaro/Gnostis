@@ -125,7 +125,7 @@ func (s *Server) searchCode(ctx context.Context, args unifiedSearchArgs, topK in
 		filters["language"] = strings.ToLower(args.Language)
 	}
 	if args.Path != "" {
-		prefix, err := s.resolvePath(args.Project, args.Path)
+		prefix, err := s.resolvePathOrAbsolute(args.Project, args.Path)
 		if err != nil {
 			return nil, toolErrorFromResolvePath(err)
 		}
@@ -136,6 +136,12 @@ func (s *Server) searchCode(ctx context.Context, args unifiedSearchArgs, topK in
 	if err != nil {
 		slog.ErrorContext(ctx, "search code failed", "query", args.Query, "error", err)
 		return nil, toolError(errReasonSearchFailed, err.Error(), "try again later or check the index status")
+	}
+
+	if len(results) == 0 {
+		if notReady := s.indexNotReadyError(); notReady != nil {
+			return nil, notReady
+		}
 	}
 
 	items := make([]unifiedSearchResult, len(results))
@@ -151,7 +157,7 @@ func (s *Server) searchDocs(ctx context.Context, args unifiedSearchArgs, topK in
 		filters["project_id"] = args.Project
 	}
 	if args.Path != "" {
-		prefix, err := s.resolvePath(args.Project, args.Path)
+		prefix, err := s.resolvePathOrAbsolute(args.Project, args.Path)
 		if err != nil {
 			return nil, toolErrorFromResolvePath(err)
 		}
@@ -162,6 +168,12 @@ func (s *Server) searchDocs(ctx context.Context, args unifiedSearchArgs, topK in
 	if err != nil {
 		slog.ErrorContext(ctx, "search docs failed", "query", args.Query, "error", err)
 		return nil, toolError(errReasonSearchFailed, err.Error(), "try again later or check the index status")
+	}
+
+	if len(results) == 0 {
+		if notReady := s.indexNotReadyError(); notReady != nil {
+			return nil, notReady
+		}
 	}
 
 	items := make([]unifiedSearchResult, len(results))

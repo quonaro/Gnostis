@@ -39,7 +39,7 @@ func (s *Server) grep(ctx context.Context, request mcp.CallToolRequest, args gre
 		return toolError(errReasonInvalidArgument, "query is required", "provide a non-empty search query"), nil
 	}
 
-	root, err := s.resolvePath(args.Project, args.Path)
+	root, err := s.resolvePathOrAbsolute(args.Project, args.Path)
 	if err != nil {
 		return toolErrorFromResolvePath(err), nil
 	}
@@ -62,7 +62,7 @@ func (s *Server) grep(ctx context.Context, request mcp.CallToolRequest, args gre
 		if walkErr != nil || d.IsDir() {
 			return nil
 		}
-		if !s.isPathAllowed(path) || !isTextFile(path) {
+		if !isTextFile(path) {
 			return nil
 		}
 		info, walkErr := d.Info()
@@ -138,6 +138,12 @@ func (s *Server) queryDocumentation(ctx context.Context, request mcp.CallToolReq
 	if err != nil {
 		slog.ErrorContext(ctx, "query_documentation failed", "query", args.Query, "error", err)
 		return toolError(errReasonSearchFailed, err.Error(), "try again later or check the index status"), nil
+	}
+
+	if len(results) == 0 {
+		if notReady := s.indexNotReadyError(); notReady != nil {
+			return notReady, nil
+		}
 	}
 
 	items := make([]searchResultItem, len(results))

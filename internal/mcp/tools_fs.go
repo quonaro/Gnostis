@@ -50,7 +50,7 @@ type recentChange struct {
 func (s *Server) listFiles(ctx context.Context, request mcp.CallToolRequest, args listFilesArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "list_files", "project", args.Project, "path", args.Path, "pattern", args.Pattern)
 
-	root, err := s.resolvePath(args.Project, args.Path)
+	root, err := s.resolvePathOrAbsolute(args.Project, args.Path)
 	if err != nil {
 		return toolErrorFromResolvePath(err), nil
 	}
@@ -87,7 +87,7 @@ func (s *Server) listFiles(ctx context.Context, request mcp.CallToolRequest, arg
 func (s *Server) directoryTree(ctx context.Context, request mcp.CallToolRequest, args directoryTreeArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "directory_tree", "project", args.Project, "path", args.Path, "depth", args.Depth)
 
-	root, err := s.resolvePath(args.Project, args.Path)
+	root, err := s.resolvePathOrAbsolute(args.Project, args.Path)
 	if err != nil {
 		return toolErrorFromResolvePath(err), nil
 	}
@@ -169,7 +169,7 @@ func getRecentChangesTool() mcp.Tool {
 func (s *Server) getRecentChanges(ctx context.Context, request mcp.CallToolRequest, args getRecentChangesArgs) (*mcp.CallToolResult, error) {
 	slog.InfoContext(ctx, "mcp tool call", "tool", "get_recent_changes", "project", args.Project, "path", args.Path, "minutes", args.Minutes)
 
-	root, err := s.resolvePath(args.Project, args.Path)
+	root, err := s.resolvePathOrAbsolute(args.Project, args.Path)
 	if err != nil {
 		return toolErrorFromResolvePath(err), nil
 	}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/quonaro/gnostis/internal/progress"
 )
 
 // Human-readable error reason codes used by toolError.
@@ -95,6 +96,27 @@ func (s *Server) resolvePath(project, path string) (string, error) {
 	return clean, nil
 }
 
+// resolvePathOrAbsolute tries resolvePath first, then falls back to
+// resolveAbsolutePath when the path is not within an indexed project but is
+// a valid absolute path. This avoids the chicken-and-egg problem where a
+// project must be indexed before its paths can be used with project-scoped
+// tools.
+func (s *Server) resolvePathOrAbsolute(project, path string) (string, error) {
+	resolved, err := s.resolvePath(project, path)
+	if err == nil {
+		return resolved, nil
+	}
+	msg := err.Error()
+	isPathNotAllowed := strings.Contains(msg, "outside indexed projects")
+	isProjectNotFound := strings.Contains(msg, "not found") && strings.Contains(msg, "project")
+	if (isPathNotAllowed || isProjectNotFound) && filepath.IsAbs(filepath.Clean(path)) {
+		if abs, absErr := s.resolveAbsolutePath(path); absErr == nil {
+			return abs, nil
+		}
+	}
+	return "", err
+}
+
 func globFiles(root, pattern string) ([]string, error) {
 	if pattern == "" {
 		pattern = "*"
@@ -145,6 +167,25 @@ func toolError(reason, message, suggestion string) *mcp.CallToolResult {
 		Suggestion: suggestion,
 	})
 	return mcp.NewToolResultError(string(data))
+}
+
+// indexNotReadyError checks if the index is still being built and returns an
+// index_not_ready error. It returns nil when indexing is not in progress,
+// allowing the caller to return normal (possibly empty) results.
+func (s *Server) indexNotReadyError() *mcp.CallToolResult {
+	if s.indexer == nil {
+		return nil
+	}
+	pstate, err := s.indexer.ProgressState()
+	if err != nil {
+		return nil
+	}
+	if pstate.Status == progress.StatusRunning {
+		return toolError(errReasonIndexNotReady,
+			"index is still being built, no results yet",
+			"use get_index_status to check progress and try again later")
+	}
+	return nil
 }
 
 // toolErrorFromResolvePath maps a resolvePath error to a structured error.

@@ -51,4 +51,7 @@ checksum:
   algorithm: sha256
 
 release:
+  github:
+    owner: quonaro
+    name: GnostisMCP
   name_template: "{{ .ProjectName }} {{ .Version }}"

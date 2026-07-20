@@ -388,8 +388,8 @@ func TestGetFileContext_OutsideProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getFileContext: %v", err)
 	}
-	if !res.IsError {
-		t.Fatal("expected error result for path outside project")
+	if res.IsError {
+		t.Fatalf("expected fallback to absolute path, got error: %s", extractText(t, res))
 	}
 }
 

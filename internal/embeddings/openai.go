@@ -14,6 +14,11 @@ import (
 
 const debugBodyMaxLen = 2000
 
+// embedLockTimeout is how long Embed waits to acquire the concurrency lock
+// before returning an error. This prevents parallel MCP tool calls from
+// overloading the embedding model (especially local ones like Ollama).
+const embedLockTimeout = 5 * time.Second
+
 func truncateForDebug(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
@@ -23,6 +28,7 @@ func truncateForDebug(s string, maxLen int) string {
 
 // openAICompatible is an HTTP client for OpenAI-compatible /v1/embeddings endpoints.
 type openAICompatible struct {
+	sem       chan struct{}
 	client    *http.Client
 	url       string
 	model     string
@@ -35,6 +41,7 @@ func newOpenAICompatible(url, model, apiKey string, batchSize int) *openAICompat
 		batchSize = 32
 	}
 	return &openAICompatible{
+		sem:       make(chan struct{}, 1),
 		client:    &http.Client{Timeout: 120 * time.Second},
 		url:       url,
 		model:     model,
@@ -52,6 +59,11 @@ func (p *openAICompatible) BatchSize() int {
 }
 
 func (p *openAICompatible) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	if err := p.acquireEmbedLock(ctx); err != nil {
+		return nil, err
+	}
+	defer p.releaseEmbedLock()
+
 	batches := (len(texts) + p.batchSize - 1) / p.batchSize
 	if batches < 1 {
 		batches = 1
@@ -149,6 +161,29 @@ func (p *openAICompatible) embedBatch(ctx context.Context, texts []string) ([][]
 	slog.DebugContext(ctx, "embeddings received", "count", len(out), "dimensions", dims)
 
 	return out, nil
+}
+
+// acquireEmbedLock attempts to acquire the embedding concurrency semaphore.
+// If another Embed call is in progress, it waits up to embedLockTimeout.
+// If the lock is not acquired in time, it returns an error so the caller
+// can surface a clear "model is busy" message instead of overloading the
+// embedding backend (especially important for local models like Ollama).
+func (p *openAICompatible) acquireEmbedLock(ctx context.Context) error {
+	timer := time.NewTimer(embedLockTimeout)
+	defer timer.Stop()
+
+	select {
+	case p.sem <- struct{}{}:
+		return nil
+	case <-timer.C:
+		return fmt.Errorf("embedding model is busy, another request is in progress, try again later")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (p *openAICompatible) releaseEmbedLock() {
+	<-p.sem
 }
 
 type embeddingsResponse struct {
