@@ -117,7 +117,7 @@ func TestAddProject(t *testing.T) {
 func TestRemoveProject(t *testing.T) {
 	mock := &mockIndexer{}
 	srv := New("test", "1.0.0", &mockSearcher{}, nil, mock, nil, nil)
-	res, err := srv.removeProject(context.Background(), mcp.CallToolRequest{}, removeProjectArgs{Name: "foo", Confirm: true})
+	res, err := srv.removeProject(context.Background(), mcp.CallToolRequest{}, removeProjectArgs{Name: "foo"})
 	if err != nil {
 		t.Fatalf("removeProject: %v", err)
 	}

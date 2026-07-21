@@ -270,15 +270,13 @@ func (s *Server) addProject(ctx context.Context, request mcp.CallToolRequest, ar
 }
 
 type removeProjectArgs struct {
-	Name    string `json:"name"`
-	Confirm bool   `json:"confirm"`
+	Name string `json:"name"`
 }
 
 func removeProjectTool() mcp.Tool {
 	return mcp.NewTool("remove_project",
 		mcp.WithDescription("Remove a project from the index and configuration"),
 		mcp.WithString("name", mcp.Required(), mcp.Description("Project name")),
-		mcp.WithBoolean("confirm", mcp.Description("Must be true to remove"), mcp.DefaultBool(false)),
 	)
 }
 
@@ -289,9 +287,6 @@ func (s *Server) removeProject(ctx context.Context, request mcp.CallToolRequest,
 	}
 	if args.Name == "" {
 		return toolError(errReasonInvalidArgument, "name is required", "provide a project name from list_projects"), nil
-	}
-	if !args.Confirm {
-		return toolError(errReasonInvalidArgument, "confirm must be true to remove", "set confirm to true to remove the project"), nil
 	}
 
 	if err := s.indexer.RemoveProject(ctx, args.Name); err != nil {

@@ -200,7 +200,6 @@ Remove a project from the index and `config.yaml`.
 **Parameters:**
 
 - `name` (string, required)
-- `confirm` (bool, required) — must be `true`.
 
 **Returns:** object with `removed`.
 
